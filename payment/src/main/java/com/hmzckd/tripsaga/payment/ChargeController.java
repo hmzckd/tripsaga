@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -22,9 +23,13 @@ class ChargeController {
 	}
 
 	@PostMapping("/charges")
-	ResponseEntity<Charge> charge(@Valid @RequestBody ChargeRequest request) {
-		Charge charge = charges.charge(request);
-		return ResponseEntity.created(URI.create("/charges/" + charge.id())).body(charge);
+	ResponseEntity<Charge> charge(@RequestHeader("Idempotency-Key") String idempotencyKey,
+			@Valid @RequestBody ChargeRequest request) {
+		ChargeResult result = charges.charge(idempotencyKey, request);
+		if (result.replayed()) {
+			return ResponseEntity.ok().header("Idempotent-Replayed", "true").body(result.charge());
+		}
+		return ResponseEntity.created(URI.create("/charges/" + result.charge().id())).body(result.charge());
 	}
 
 	@GetMapping("/charges/{id}")

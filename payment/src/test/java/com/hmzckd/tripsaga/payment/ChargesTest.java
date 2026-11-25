@@ -73,12 +73,46 @@ class ChargesTest {
 	}
 
 	private ResponseEntity<Map<String, Object>> charge(String cardToken) {
+		return charge(UUID.randomUUID().toString(), 1205000, cardToken);
+	}
+
+	private ResponseEntity<Map<String, Object>> charge(String key, long amountKurus, String cardToken) {
 		return http.post().uri("/charges")
+				.header("Idempotency-Key", key)
 				.contentType(MediaType.APPLICATION_JSON)
-				.body(new ChargeRequest("Ayşe Yılmaz", 1205000, cardToken))
+				.body(new ChargeRequest("Ayşe Yılmaz", amountKurus, cardToken))
 				.retrieve()
 				.toEntity(new ParameterizedTypeReference<>() {
 				});
+	}
+
+	@Test
+	void theSameKeyTwiceChargesOnce() {
+		ResponseEntity<Map<String, Object>> first = charge("booking-1-payment", 1205000, "tok_ok");
+		ResponseEntity<Map<String, Object>> second = charge("booking-1-payment", 1205000, "tok_ok");
+
+		assertThat(first.getStatusCode().value()).isEqualTo(201);
+		assertThat(second.getStatusCode().value()).isEqualTo(200);
+		assertThat(second.getHeaders().getFirst("Idempotent-Replayed")).isEqualTo("true");
+		assertThat(second.getBody()).isEqualTo(first.getBody());
+		assertThat(jdbc.sql("SELECT count(*) FROM charges").query(Integer.class).single()).isEqualTo(1);
+	}
+
+	@Test
+	void aRetriedDeclineIsDeclinedAgainWithoutASecondCharge() {
+		ResponseEntity<Map<String, Object>> first = charge("booking-2-payment", 1205000, "tok_declined");
+		ResponseEntity<Map<String, Object>> second = charge("booking-2-payment", 1205000, "tok_declined");
+
+		assertThat(second.getStatusCode().value()).isEqualTo(402);
+		assertThat(second.getBody().get("chargeId")).isEqualTo(first.getBody().get("chargeId"));
+		assertThat(jdbc.sql("SELECT count(*) FROM charges").query(Integer.class).single()).isEqualTo(1);
+	}
+
+	@Test
+	void theSameKeyForADifferentAmountIsRejected() {
+		charge("booking-3-payment", 1205000, "tok_ok");
+
+		assertThat(charge("booking-3-payment", 999, "tok_ok").getStatusCode().value()).isEqualTo(422);
 	}
 
 	private Map<String, Object> get(UUID id) {

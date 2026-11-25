@@ -15,17 +15,29 @@ class ChargeRepository {
 		this.jdbc = jdbc;
 	}
 
-	void insert(UUID id, ChargeRequest request, ChargeStatus status) {
-		jdbc.sql("""
-				INSERT INTO charges (id, customer, amount_kurus, card_token, status)
-				VALUES (:id, :customer, :amount, :cardToken, :status)
+	boolean insert(UUID id, String idempotencyKey, ChargeRequest request, ChargeStatus status) {
+		return jdbc.sql("""
+				INSERT INTO charges (id, idempotency_key, customer, amount_kurus, card_token, status)
+				VALUES (:id, :key, :customer, :amount, :cardToken, :status)
+				ON CONFLICT (idempotency_key) DO NOTHING
 				""")
 				.param("id", id)
+				.param("key", idempotencyKey)
 				.param("customer", request.customer())
 				.param("amount", request.amountKurus())
 				.param("cardToken", request.cardToken())
 				.param("status", status.name())
-				.update();
+				.update() == 1;
+	}
+
+	Optional<ChargeRow> findByKey(String idempotencyKey) {
+		return jdbc.sql("""
+				SELECT id, customer, amount_kurus, card_token, status FROM charges
+				WHERE idempotency_key = :key
+				""")
+				.param("key", idempotencyKey)
+				.query(ChargeRow.class)
+				.optional();
 	}
 
 	Optional<Charge> find(UUID id) {
@@ -44,5 +56,17 @@ class ChargeRepository {
 				.param("from", from.name())
 				.param("to", to.name())
 				.update() == 1;
+	}
+
+	record ChargeRow(UUID id, String customer, long amountKurus, String cardToken, ChargeStatus status) {
+
+		Charge charge() {
+			return new Charge(id, customer, amountKurus, status);
+		}
+
+		boolean sameRequestAs(ChargeRequest request) {
+			return customer.equals(request.customer()) && amountKurus == request.amountKurus()
+					&& cardToken.equals(request.cardToken());
+		}
 	}
 }

@@ -15,6 +15,11 @@ class GlobalExceptionHandler {
 		return problem;
 	}
 
+	@ExceptionHandler(UnprocessableException.class)
+	ProblemDetail handleUnprocessable(UnprocessableException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage());
+	}
+
 	@ExceptionHandler(NotFoundException.class)
 	ProblemDetail handleNotFound(NotFoundException ex) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());

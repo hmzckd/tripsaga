@@ -41,16 +41,25 @@ class HotelRepository {
 				.update();
 	}
 
-	void insertHold(UUID id, HoldRequest request) {
-		jdbc.sql("""
-				INSERT INTO holds (id, hotel_id, guest, nights, status)
-				VALUES (:id, :hotelId, :guest, :nights, 'HELD')
+	boolean insertHold(UUID id, String idempotencyKey, HoldRequest request) {
+		return jdbc.sql("""
+				INSERT INTO holds (id, idempotency_key, hotel_id, guest, nights, status)
+				VALUES (:id, :key, :hotelId, :guest, :nights, 'HELD')
+				ON CONFLICT (idempotency_key) DO NOTHING
 				""")
 				.param("id", id)
+				.param("key", idempotencyKey)
 				.param("hotelId", request.hotelId())
 				.param("guest", request.guest())
 				.param("nights", request.nights())
-				.update();
+				.update() == 1;
+	}
+
+	Optional<Hold> findHoldByKey(String idempotencyKey) {
+		return jdbc.sql(SELECT_HOLD + " WHERE h.idempotency_key = :key")
+				.param("key", idempotencyKey)
+				.query(Hold.class)
+				.optional();
 	}
 
 	Optional<Hold> findHold(UUID id) {

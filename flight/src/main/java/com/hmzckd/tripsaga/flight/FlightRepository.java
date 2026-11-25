@@ -41,12 +41,24 @@ class FlightRepository {
 				.update();
 	}
 
-	void insertHold(UUID id, String flightId, String passenger) {
-		jdbc.sql("INSERT INTO holds (id, flight_id, passenger, status) VALUES (:id, :flightId, :passenger, 'HELD')")
+	boolean insertHold(UUID id, String idempotencyKey, HoldRequest request) {
+		return jdbc.sql("""
+				INSERT INTO holds (id, idempotency_key, flight_id, passenger, status)
+				VALUES (:id, :key, :flightId, :passenger, 'HELD')
+				ON CONFLICT (idempotency_key) DO NOTHING
+				""")
 				.param("id", id)
-				.param("flightId", flightId)
-				.param("passenger", passenger)
-				.update();
+				.param("key", idempotencyKey)
+				.param("flightId", request.flightId())
+				.param("passenger", request.passenger())
+				.update() == 1;
+	}
+
+	Optional<Hold> findHoldByKey(String idempotencyKey) {
+		return jdbc.sql(SELECT_HOLD + " WHERE h.idempotency_key = :key")
+				.param("key", idempotencyKey)
+				.query(Hold.class)
+				.optional();
 	}
 
 	Optional<Hold> findHold(UUID id) {

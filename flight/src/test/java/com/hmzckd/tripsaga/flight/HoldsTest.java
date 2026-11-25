@@ -115,6 +115,7 @@ class HoldsTest {
 
 	private ResponseEntity<Hold> hold(String flightId, String passenger) {
 		return http.post().uri("/holds")
+				.header("Idempotency-Key", UUID.randomUUID().toString())
 				.contentType(MediaType.APPLICATION_JSON)
 				.body(new HoldRequest(flightId, passenger))
 				.exchange((request, response) -> response.getStatusCode().is2xxSuccessful()

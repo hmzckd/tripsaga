@@ -1,12 +1,15 @@
 package com.hmzckd.tripsaga.payment;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.hmzckd.tripsaga.payment.web.NotFoundException;
+import com.hmzckd.tripsaga.payment.ChargeRepository.ChargeRow;
 import com.hmzckd.tripsaga.payment.web.PaymentDeclinedException;
+import com.hmzckd.tripsaga.payment.web.UnprocessableException;
 
 @Service
 public class ChargeService {
@@ -18,10 +21,23 @@ public class ChargeService {
 	}
 
 	@Transactional(noRollbackFor = PaymentDeclinedException.class)
-	public Charge charge(ChargeRequest request) {
+	public ChargeResult charge(String idempotencyKey, ChargeRequest request) {
+		Optional<ChargeRow> earlier = repository.findByKey(idempotencyKey);
+		if (earlier.isPresent()) {
+			return replay(earlier.get(), request);
+		}
 		UUID id = UUID.randomUUID();
-		repository.insert(id, request, Card.outcome(request.cardToken()));
-		return answer(get(id));
+		if (!repository.insert(id, idempotencyKey, request, Card.outcome(request.cardToken()))) {
+			return replay(repository.findByKey(idempotencyKey).orElseThrow(), request);
+		}
+		return new ChargeResult(answer(get(id)), false);
+	}
+
+	private static ChargeResult replay(ChargeRow earlier, ChargeRequest request) {
+		if (!earlier.sameRequestAs(request)) {
+			throw new UnprocessableException("This Idempotency-Key was already used for a different charge");
+		}
+		return new ChargeResult(answer(earlier.charge()), true);
 	}
 
 	public Charge get(UUID id) {

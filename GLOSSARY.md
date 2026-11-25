@@ -17,3 +17,6 @@ Terms used in the code, tests and docs of TripSaga.
 | Capture | Taking the money from the card. A captured charge is the point where the customer has paid. |
 | Refund | Giving captured money back. The compensation of a capture. |
 | Card token | A stand-in for card details. `tok_declined` makes the fake payment service decline; any other token is captured. |
+| Idempotency-Key | A header that names one logical request. Sending the same key again returns the first answer instead of doing the work twice. |
+| Idempotent | Doing it twice has the same effect as doing it once. |
+| Replay | The answer to a repeated key: the stored result of the first request, marked with `Idempotent-Replayed: true`. |

@@ -1,6 +1,7 @@
 package com.hmzckd.tripsaga.flight;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -8,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.hmzckd.tripsaga.flight.web.ConflictException;
 import com.hmzckd.tripsaga.flight.web.NotFoundException;
+import com.hmzckd.tripsaga.flight.web.UnprocessableException;
 
 @Service
 public class HoldService {
@@ -23,16 +25,29 @@ public class HoldService {
 	}
 
 	@Transactional
-	public Hold hold(HoldRequest request) {
+	public HoldResult hold(String idempotencyKey, HoldRequest request) {
+		Optional<Hold> earlier = repository.findHoldByKey(idempotencyKey);
+		if (earlier.isPresent()) {
+			return replay(earlier.get(), request);
+		}
 		if (repository.findFlight(request.flightId()).isEmpty()) {
 			throw new NotFoundException("Flight " + request.flightId() + " does not exist");
+		}
+		UUID id = UUID.randomUUID();
+		if (!repository.insertHold(id, idempotencyKey, request)) {
+			return replay(repository.findHoldByKey(idempotencyKey).orElseThrow(), request);
 		}
 		if (!repository.takeSeat(request.flightId())) {
 			throw new ConflictException("Flight " + request.flightId() + " has no free seats");
 		}
-		UUID id = UUID.randomUUID();
-		repository.insertHold(id, request.flightId(), request.passenger());
-		return get(id);
+		return new HoldResult(get(id), false);
+	}
+
+	private static HoldResult replay(Hold earlier, HoldRequest request) {
+		if (!earlier.flightId().equals(request.flightId()) || !earlier.passenger().equals(request.passenger())) {
+			throw new UnprocessableException("This Idempotency-Key was already used for a different hold");
+		}
+		return new HoldResult(earlier, true);
 	}
 
 	public Hold get(UUID id) {

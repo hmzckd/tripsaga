@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -28,9 +29,13 @@ class HotelController {
 	}
 
 	@PostMapping("/holds")
-	ResponseEntity<Hold> hold(@Valid @RequestBody HoldRequest request) {
-		Hold hold = holds.hold(request);
-		return ResponseEntity.created(URI.create("/holds/" + hold.id())).body(hold);
+	ResponseEntity<Hold> hold(@RequestHeader("Idempotency-Key") String idempotencyKey,
+			@Valid @RequestBody HoldRequest request) {
+		HoldResult result = holds.hold(idempotencyKey, request);
+		if (result.replayed()) {
+			return ResponseEntity.ok().header("Idempotent-Replayed", "true").body(result.hold());
+		}
+		return ResponseEntity.created(URI.create("/holds/" + result.hold().id())).body(result.hold());
 	}
 
 	@GetMapping("/holds/{id}")

@@ -1,6 +1,7 @@
 package com.hmzckd.tripsaga.hotel;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -8,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.hmzckd.tripsaga.hotel.web.ConflictException;
 import com.hmzckd.tripsaga.hotel.web.NotFoundException;
+import com.hmzckd.tripsaga.hotel.web.UnprocessableException;
 
 @Service
 public class HoldService {
@@ -23,16 +25,30 @@ public class HoldService {
 	}
 
 	@Transactional
-	public Hold hold(HoldRequest request) {
+	public HoldResult hold(String idempotencyKey, HoldRequest request) {
+		Optional<Hold> earlier = repository.findHoldByKey(idempotencyKey);
+		if (earlier.isPresent()) {
+			return replay(earlier.get(), request);
+		}
 		if (repository.findHotel(request.hotelId()).isEmpty()) {
 			throw new NotFoundException("Hotel " + request.hotelId() + " does not exist");
+		}
+		UUID id = UUID.randomUUID();
+		if (!repository.insertHold(id, idempotencyKey, request)) {
+			return replay(repository.findHoldByKey(idempotencyKey).orElseThrow(), request);
 		}
 		if (!repository.takeRoom(request.hotelId())) {
 			throw new ConflictException("Hotel " + request.hotelId() + " has no free rooms");
 		}
-		UUID id = UUID.randomUUID();
-		repository.insertHold(id, request);
-		return get(id);
+		return new HoldResult(get(id), false);
+	}
+
+	private static HoldResult replay(Hold earlier, HoldRequest request) {
+		if (!earlier.hotelId().equals(request.hotelId()) || !earlier.guest().equals(request.guest())
+				|| earlier.nights() != request.nights()) {
+			throw new UnprocessableException("This Idempotency-Key was already used for a different hold");
+		}
+		return new HoldResult(earlier, true);
 	}
 
 	public Hold get(UUID id) {

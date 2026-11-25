@@ -85,6 +85,7 @@ class HoldsTest {
 
 	private ResponseEntity<Hold> hold(String hotelId, int nights) {
 		return http.post().uri("/holds")
+				.header("Idempotency-Key", UUID.randomUUID().toString())
 				.contentType(MediaType.APPLICATION_JSON)
 				.body(new HoldRequest(hotelId, "Ayşe Yılmaz", nights))
 				.exchange((request, response) -> response.getStatusCode().is2xxSuccessful()
