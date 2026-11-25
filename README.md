@@ -52,6 +52,14 @@ Work in progress.
    curl -X POST localhost:8080/api/bookings/<id>/cancel -H 'Content-Type: application/json' -d '{"reason":"changed plans"}'
    ```
 
+   The card token `tok_pending` leaves the payment waiting for the bank. The saga checks it every 10 seconds and gives
+   up after 15 minutes. Play the bank yourself:
+
+   ```bash
+   curl localhost:8083/charges/by-key/<id>-payment
+   curl -X POST localhost:8083/charges/<charge-id>/complete -H 'Content-Type: application/json' -d '{"outcome":"CAPTURED"}'
+   ```
+
 4. Try the failure paths. `XQ0000` has no seats, `BJV-DOLU` has no rooms and the card token `tok_declined` is always
    declined. Start a participant with `--tripsaga.faults.enabled=true` to make it slow (`delayMs`), fail the next
    writes without doing them (`failNext`) or do the next writes and lose the answer (`loseNext`):

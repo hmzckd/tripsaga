@@ -31,7 +31,7 @@ import io.temporal.client.WorkflowOptions;
 class BookingController {
 
 	private static final Set<BookingStatus> CANCELLABLE = EnumSet.of(BookingStatus.STARTED, BookingStatus.FLIGHT_HELD,
-			BookingStatus.HOTEL_HELD);
+			BookingStatus.HOTEL_HELD, BookingStatus.PAYMENT_PENDING);
 
 	private final WorkflowClient temporal;
 	private final BookingRecords records;

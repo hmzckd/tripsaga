@@ -138,6 +138,41 @@ class ChargesTest {
 		assertThat(refundByKey("booking-6-payment")).containsEntry("status", "DECLINED");
 	}
 
+	@Test
+	void aPendingChargeIsAcceptedAndCompletedLater() {
+		ResponseEntity<Map<String, Object>> accepted = charge("tok_pending");
+		UUID id = UUID.fromString((String) accepted.getBody().get("id"));
+
+		assertThat(accepted.getStatusCode().value()).isEqualTo(202);
+		assertThat(accepted.getBody()).containsEntry("status", "PENDING");
+		assertThat(complete(id, "CAPTURED").getStatusCode().value()).isEqualTo(200);
+		assertThat(get(id)).containsEntry("status", "CAPTURED");
+		assertThat(complete(id, "CAPTURED").getStatusCode().value()).isEqualTo(200);
+		assertThat(complete(id, "DECLINED").getStatusCode().value()).isEqualTo(409);
+	}
+
+	@Test
+	void refundingAPendingChargeCancelsItAndALateApprovalIsRefused() {
+		charge("booking-7-payment", 1205000, "tok_pending");
+
+		assertThat(http.get().uri("/charges/by-key/booking-7-payment").retrieve().body(String.class))
+				.contains("\"status\":\"PENDING\"");
+
+		Map<String, Object> cancelled = refundByKey("booking-7-payment");
+
+		assertThat(cancelled).containsEntry("status", "CANCELLED");
+		assertThat(complete(UUID.fromString((String) cancelled.get("id")), "CAPTURED").getStatusCode().value())
+				.isEqualTo(409);
+	}
+
+	private ResponseEntity<String> complete(UUID id, String outcome) {
+		return http.post().uri("/charges/{id}/complete", id)
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(Map.of("outcome", outcome))
+				.retrieve()
+				.toEntity(String.class);
+	}
+
 	private Map<String, Object> refundByKey(String key) {
 		return http.post().uri("/charges/by-key/{key}/refund", key).retrieve()
 				.body(new ParameterizedTypeReference<>() {

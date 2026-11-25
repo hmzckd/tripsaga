@@ -1,6 +1,7 @@
 package com.hmzckd.tripsaga.booking.participants;
 
 import java.util.Map;
+import java.util.UUID;
 
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -26,6 +27,11 @@ class PaymentClient implements PaymentActivities {
 				.body(Map.of("customer", customer, "amountKurus", amountKurus, "cardToken", cardToken))
 				.retrieve()
 				.body(Charge.class));
+	}
+
+	@Override
+	public Charge status(UUID chargeId) {
+		return Http.call(() -> http.get().uri("/charges/{id}", chargeId).retrieve().body(Charge.class));
 	}
 
 	@Override

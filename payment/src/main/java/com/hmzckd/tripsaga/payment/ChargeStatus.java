@@ -1,5 +1,5 @@
 package com.hmzckd.tripsaga.payment;
 
 public enum ChargeStatus {
-	CAPTURED, DECLINED, REFUNDED, CANCELLED
+	PENDING, CAPTURED, DECLINED, REFUNDED, CANCELLED
 }

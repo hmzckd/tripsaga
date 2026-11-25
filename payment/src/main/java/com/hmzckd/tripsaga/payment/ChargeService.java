@@ -48,10 +48,30 @@ public class ChargeService {
 		return repository.find(id).orElseThrow(() -> new NotFoundException("Charge " + id + " does not exist"));
 	}
 
+	public Charge getByKey(String idempotencyKey) {
+		return repository.findByKey(idempotencyKey).map(ChargeRow::charge)
+				.orElseThrow(() -> new NotFoundException("No charge has the Idempotency-Key " + idempotencyKey));
+	}
+
 	@Transactional
 	public Charge refund(UUID id) {
-		repository.changeStatus(id, ChargeStatus.CAPTURED, ChargeStatus.REFUNDED);
+		if (!repository.changeStatus(id, ChargeStatus.CAPTURED, ChargeStatus.REFUNDED)) {
+			repository.changeStatus(id, ChargeStatus.PENDING, ChargeStatus.CANCELLED);
+		}
 		return get(id);
+	}
+
+	@Transactional
+	public Charge complete(UUID id, CompleteRequest.Outcome outcome) {
+		ChargeStatus to = ChargeStatus.valueOf(outcome.name());
+		if (repository.changeStatus(id, ChargeStatus.PENDING, to)) {
+			return get(id);
+		}
+		Charge charge = get(id);
+		if (charge.status() == to) {
+			return charge;
+		}
+		throw new ConflictException("Charge " + id + " is " + charge.status() + " and cannot be completed");
 	}
 
 	@Transactional

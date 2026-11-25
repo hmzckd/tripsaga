@@ -29,12 +29,26 @@ class ChargeController {
 		if (result.replayed()) {
 			return ResponseEntity.ok().header("Idempotent-Replayed", "true").body(result.charge());
 		}
-		return ResponseEntity.created(URI.create("/charges/" + result.charge().id())).body(result.charge());
+		URI location = URI.create("/charges/" + result.charge().id());
+		if (result.charge().status() == ChargeStatus.PENDING) {
+			return ResponseEntity.accepted().location(location).body(result.charge());
+		}
+		return ResponseEntity.created(location).body(result.charge());
+	}
+
+	@PostMapping("/charges/{id}/complete")
+	Charge complete(@PathVariable UUID id, @Valid @RequestBody CompleteRequest request) {
+		return charges.complete(id, request.outcome());
 	}
 
 	@GetMapping("/charges/{id}")
 	Charge get(@PathVariable UUID id) {
 		return charges.get(id);
+	}
+
+	@GetMapping("/charges/by-key/{idempotencyKey}")
+	Charge getByKey(@PathVariable String idempotencyKey) {
+		return charges.getByKey(idempotencyKey);
 	}
 
 	@PostMapping("/charges/{id}/refund")

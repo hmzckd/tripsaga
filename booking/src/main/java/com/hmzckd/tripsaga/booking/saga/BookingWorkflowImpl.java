@@ -14,6 +14,9 @@ import io.temporal.workflow.Workflow;
 
 public class BookingWorkflowImpl implements BookingWorkflow {
 
+	static final Duration PAYMENT_TIMEOUT = Duration.ofMinutes(15);
+	static final Duration PAYMENT_CHECK_INTERVAL = Duration.ofSeconds(10);
+
 	static final ActivityOptions FORWARD = ActivityOptions.newBuilder()
 			.setStartToCloseTimeout(Duration.ofSeconds(10))
 			.setRetryOptions(RetryOptions.newBuilder()
@@ -33,6 +36,9 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 					.setMaximumAttempts(0)
 					.build())
 			.build();
+
+	private static final String PENDING = "PENDING";
+	private static final String CAPTURED = "CAPTURED";
 
 	private final FlightActivities flight = Workflow.newActivityStub(FlightActivities.class, FORWARD);
 	private final HotelActivities hotel = Workflow.newActivityStub(HotelActivities.class, FORWARD);
@@ -77,6 +83,11 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 			action = "charge " + totalKurus + " kurus";
 			compensations.push(new Compensation("refund payment", () -> paymentUntilDone.refund(key("payment"))));
 			Charge charge = payment.charge(key("payment"), booking.customer(), totalKurus, booking.cardToken());
+			if (PENDING.equals(charge.status())) {
+				advance(BookingStatus.PAYMENT_PENDING, action, PENDING);
+				action = "wait for the payment";
+				charge = waitForPayment(charge);
+			}
 			paid = true;
 			advance(BookingStatus.PAYMENT_CAPTURED, action, charge.status());
 		}
@@ -86,8 +97,8 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 			compensate();
 			return finish();
 		}
-		catch (CancelledByCustomer ex) {
-			failure = "cancelled by the customer: " + cancelReason;
+		catch (SagaStopped ex) {
+			failure = ex.getMessage();
 			compensate();
 			return finish();
 		}
@@ -118,10 +129,32 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 				booking.nights(), status, totalKurus, failure, List.copyOf(steps));
 	}
 
+	private Charge waitForPayment(Charge pending) {
+		long deadline = Workflow.currentTimeMillis() + PAYMENT_TIMEOUT.toMillis();
+		Charge charge = pending;
+		while (PENDING.equals(charge.status())) {
+			long left = deadline - Workflow.currentTimeMillis();
+			if (left <= 0) {
+				String timeout = PAYMENT_TIMEOUT.toMinutes() + " minutes";
+				steps.add(new Step("wait for the payment", "TIMED OUT after " + timeout));
+				throw new SagaStopped("the payment was not completed within " + timeout);
+			}
+			Workflow.await(Duration.ofMillis(Math.min(left, PAYMENT_CHECK_INTERVAL.toMillis())),
+					() -> cancelReason != null);
+			stopIfCancelled();
+			charge = payment.status(pending.id());
+		}
+		if (!CAPTURED.equals(charge.status())) {
+			steps.add(new Step("wait for the payment", charge.status()));
+			throw new SagaStopped("the payment ended as " + charge.status());
+		}
+		return charge;
+	}
+
 	private void stopIfCancelled() {
 		if (cancelReason != null) {
 			steps.add(new Step("cancel request", "ACCEPTED: " + cancelReason));
-			throw new CancelledByCustomer();
+			throw new SagaStopped("cancelled by the customer: " + cancelReason);
 		}
 	}
 
@@ -171,6 +204,10 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 	private record Compensation(String action, Runnable undo) {
 	}
 
-	private static final class CancelledByCustomer extends RuntimeException {
+	private static final class SagaStopped extends RuntimeException {
+
+		SagaStopped(String reason) {
+			super(reason, null, false, false);
+		}
 	}
 }

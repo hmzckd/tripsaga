@@ -1,6 +1,7 @@
 package com.hmzckd.tripsaga.booking.saga;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -13,6 +14,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
 
+import java.time.Duration;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -22,6 +24,7 @@ import org.mockito.InOrder;
 
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
+import io.temporal.client.WorkflowStub;
 import io.temporal.failure.ApplicationFailure;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
@@ -279,6 +282,90 @@ class BookingWorkflowTest {
 		assertThat(state.status()).isEqualTo(BookingStatus.CONFIRMED);
 		assertThat(state.steps()).contains(new Step("cancel request", "IGNORED: the payment was already captured"));
 		verify(flight, never()).cancel(anyString());
+	}
+
+	@Test
+	void aPendingPaymentIsCheckedUntilTheBankApproves() {
+		UUID chargeId = UUID.randomUUID();
+		holdsSucceed();
+		when(payment.charge(anyString(), anyString(), anyLong(), anyString()))
+				.thenReturn(new Charge(chargeId, 1205000, "PENDING"));
+		when(payment.status(chargeId))
+				.thenReturn(new Charge(chargeId, 1205000, "PENDING"))
+				.thenReturn(new Charge(chargeId, 1205000, "PENDING"))
+				.thenReturn(new Charge(chargeId, 1205000, "CAPTURED"));
+
+		BookingState state = book(new Booking("b14", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_pending"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CONFIRMED);
+		assertThat(state.steps()).contains(new Step("charge 1205000 kurus", "PENDING"),
+				new Step("wait for the payment", "CAPTURED"));
+		verify(payment, times(3)).status(chargeId);
+	}
+
+	@Test
+	void aPaymentThatNeverCompletesTimesOutAfterFifteenMinutesAndIsVoided() {
+		UUID chargeId = UUID.randomUUID();
+		holdsSucceed();
+		when(payment.charge(anyString(), anyString(), anyLong(), anyString()))
+				.thenReturn(new Charge(chargeId, 1205000, "PENDING"));
+		when(payment.status(chargeId)).thenReturn(new Charge(chargeId, 1205000, "PENDING"));
+		long started = env.currentTimeMillis();
+
+		BookingState state = book(new Booking("b15", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_pending"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		assertThat(state.failure()).isEqualTo("the payment was not completed within 15 minutes");
+		assertThat(Duration.ofMillis(env.currentTimeMillis() - started)).isGreaterThanOrEqualTo(Duration.ofMinutes(15));
+		InOrder undo = inOrder(payment, hotel, flight);
+		undo.verify(payment).refund("b15-payment");
+		undo.verify(hotel).cancel("b15-hotel-hold");
+		undo.verify(flight).cancel("b15-flight-hold");
+	}
+
+	@Test
+	void aPaymentDeclinedByTheBankLaterIsCompensated() {
+		UUID chargeId = UUID.randomUUID();
+		holdsSucceed();
+		when(payment.charge(anyString(), anyString(), anyLong(), anyString()))
+				.thenReturn(new Charge(chargeId, 1205000, "PENDING"));
+		when(payment.status(chargeId)).thenReturn(new Charge(chargeId, 1205000, "DECLINED"));
+
+		BookingState state = book(new Booking("b16", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_pending"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		assertThat(state.failure()).isEqualTo("the payment ended as DECLINED");
+	}
+
+	@Test
+	void aCustomerCanCancelWhileThePaymentIsPending() {
+		UUID chargeId = UUID.randomUUID();
+		holdsSucceed();
+		when(payment.charge(anyString(), anyString(), anyLong(), anyString()))
+				.thenReturn(new Charge(chargeId, 1205000, "PENDING"));
+		when(payment.status(chargeId)).thenReturn(new Charge(chargeId, 1205000, "PENDING"));
+		BookingWorkflow saga = env.getWorkflowClient().newWorkflowStub(BookingWorkflow.class,
+				WorkflowOptions.newBuilder()
+						.setWorkflowId(BookingWorkflow.workflowId("b17"))
+						.setTaskQueue(BookingWorkflow.TASK_QUEUE)
+						.build());
+		WorkflowClient.start(saga::book, new Booking("b17", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_pending"));
+		await().atMost(Duration.ofSeconds(5))
+				.until(() -> saga.state().status() == BookingStatus.PAYMENT_PENDING);
+
+		saga.cancel("found a cheaper trip");
+		BookingState state = WorkflowStub.fromTyped(saga).getResult(BookingState.class);
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		assertThat(state.failure()).isEqualTo("cancelled by the customer: found a cheaper trip");
+		verify(payment).refund("b17-payment");
+	}
+
+	private void holdsSucceed() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenReturn(new FlightHold(SEAT, "TK2412", "HELD", 245000));
+		when(hotel.hold(anyString(), anyString(), anyString(), anyInt()))
+				.thenReturn(new HotelHold(ROOM, "AYT-LARA", 3, "HELD", 960000));
 	}
 
 	private BookingWorkflow saga(String bookingId) {

@@ -38,3 +38,7 @@ Terms used in the code, tests and docs of TripSaga.
 | Lost answer | A fault (`loseNext`) where the participant does the work and then answers `503`, the clearest way to show an unknown outcome. |
 | Signal | A one-way message to a running workflow. `POST /api/bookings/{id}/cancel` sends the `cancel` signal; the saga checks it between steps. |
 | Customer cancel | A cancel request that arrives before the payment. The saga stops at the next step boundary and compensates. After the payment it is recorded as ignored. |
+| Pending payment | A charge the bank has not decided yet (`tok_pending`). The payment service answers `202 Accepted` and the decision comes later through `POST /charges/{id}/complete`. |
+| Durable timer | A wait inside a workflow (`Workflow.await`, `Workflow.sleep`) that Temporal stores on the server. It survives worker restarts; a 15-minute wait costs nothing while it waits. |
+| Time skipping | The Temporal test environment jumps over timers when nothing else is running, so a 15-minute timeout is tested in milliseconds. |
+| Void | Cancelling a pending charge before the money was captured. The refund endpoints void pending charges. |
