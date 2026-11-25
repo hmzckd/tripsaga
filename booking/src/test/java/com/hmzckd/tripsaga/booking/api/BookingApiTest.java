@@ -137,6 +137,54 @@ class BookingApiTest {
 	}
 
 	@Test
+	void aCustomerCanCancelWhileTheRoomIsBeingHeld() {
+		stub(participants.flight, "/holds", 201,
+				"{\"id\":\"" + SEAT + "\",\"flightId\":\"TK2412\",\"status\":\"HELD\",\"priceKurus\":245000}");
+		participants.hotel.stubFor(post(urlEqualTo("/holds")).willReturn(aResponse()
+				.withStatus(201)
+				.withFixedDelay(1500)
+				.withHeader("Content-Type", "application/json")
+				.withBody("{\"id\":\"" + ROOM
+						+ "\",\"hotelId\":\"AYT-LARA\",\"nights\":3,\"status\":\"HELD\",\"totalKurus\":960000}")));
+		stubAny(participants.flight, "/holds/by-key/.*/cancel");
+		stubAny(participants.hotel, "/holds/by-key/.*/cancel");
+
+		String id = (String) book().getBody().get("id");
+		await().atMost(Duration.ofSeconds(5)).until(() -> participants.hotel.getAllServeEvents().size() == 1);
+
+		assertThat(cancel(id).getStatusCode().value()).isEqualTo(202);
+
+		await().atMost(Duration.ofSeconds(10))
+				.until(() -> "CANCELLED".equals(get(id).getBody().get("status")));
+		assertThat(get(id).getBody()).containsEntry("failure", "cancelled by the customer: changed my plans");
+		participants.payment.verify(0, postRequestedFor(urlMatching(".*")));
+		participants.hotel.verify(postRequestedFor(urlEqualTo("/holds/by-key/" + id + "-hotel-hold/cancel")));
+		participants.flight.verify(postRequestedFor(urlEqualTo("/holds/by-key/" + id + "-flight-hold/cancel")));
+	}
+
+	@Test
+	void aConfirmedBookingCannotBeCancelled() {
+		stub(participants.flight, "/holds", 201,
+				"{\"id\":\"" + SEAT + "\",\"flightId\":\"TK2412\",\"status\":\"HELD\",\"priceKurus\":245000}");
+		stub(participants.hotel, "/holds", 201, "{\"id\":\"" + ROOM
+				+ "\",\"hotelId\":\"AYT-LARA\",\"nights\":3,\"status\":\"HELD\",\"totalKurus\":960000}");
+		stub(participants.payment, "/charges", 201,
+				"{\"id\":\"" + UUID.randomUUID() + "\",\"amountKurus\":1205000,\"status\":\"CAPTURED\"}");
+		stub(participants.flight, "/holds/" + SEAT + "/confirm", 200, "{}");
+		stub(participants.hotel, "/holds/" + ROOM + "/confirm", 200, "{}");
+		String id = (String) book().getBody().get("id");
+		await().atMost(Duration.ofSeconds(10))
+				.until(() -> "CONFIRMED".equals(get(id).getBody().get("status")));
+
+		assertThat(cancel(id).getStatusCode().value()).isEqualTo(409);
+	}
+
+	@Test
+	void cancellingAnUnknownBookingIsNotFound() {
+		assertThat(cancel(UUID.randomUUID().toString()).getStatusCode().value()).isEqualTo(404);
+	}
+
+	@Test
 	void anInvalidRequestIsRejectedBeforeTheSagaStarts() {
 		ResponseEntity<String> response = http.post().uri("/api/bookings")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -176,6 +224,14 @@ class BookingApiTest {
 				.retrieve()
 				.toEntity(new ParameterizedTypeReference<>() {
 				});
+	}
+
+	private ResponseEntity<String> cancel(String id) {
+		return http.post().uri("/api/bookings/{id}/cancel", id)
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(Map.of("reason", "changed my plans"))
+				.retrieve()
+				.toEntity(String.class);
 	}
 
 	private ResponseEntity<Map<String, Object>> get(String id) {

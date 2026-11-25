@@ -1,7 +1,9 @@
 package com.hmzckd.tripsaga.booking.api;
 
 import java.net.URI;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
@@ -27,6 +29,9 @@ import io.temporal.client.WorkflowOptions;
 @RestController
 @RequestMapping("/api/bookings")
 class BookingController {
+
+	private static final Set<BookingStatus> CANCELLABLE = EnumSet.of(BookingStatus.STARTED, BookingStatus.FLIGHT_HELD,
+			BookingStatus.HOTEL_HELD);
 
 	private final WorkflowClient temporal;
 	private final BookingRecords records;
@@ -55,10 +60,33 @@ class BookingController {
 	@GetMapping("/{id}")
 	BookingState get(@PathVariable UUID id) {
 		try {
-			return temporal.newWorkflowStub(BookingWorkflow.class, BookingWorkflow.workflowId(id.toString())).state();
+			return saga(id).state();
 		}
 		catch (WorkflowNotFoundException ex) {
-			return records.find(id).orElseThrow(() -> new NotFoundException("Booking " + id + " does not exist"));
+			return records.find(id).orElseThrow(() -> notFound(id));
 		}
+	}
+
+	@PostMapping("/{id}/cancel")
+	ResponseEntity<BookingState> cancel(@PathVariable UUID id, @RequestBody(required = false) CancelRequest request) {
+		BookingState current = get(id);
+		if (!CANCELLABLE.contains(current.status())) {
+			throw new ConflictException("Booking " + id + " is " + current.status() + " and can no longer be cancelled");
+		}
+		try {
+			saga(id).cancel(request == null ? null : request.reason());
+		}
+		catch (WorkflowNotFoundException ex) {
+			throw new ConflictException("Booking " + id + " has already finished");
+		}
+		return ResponseEntity.accepted().body(current);
+	}
+
+	private BookingWorkflow saga(UUID id) {
+		return temporal.newWorkflowStub(BookingWorkflow.class, BookingWorkflow.workflowId(id.toString()));
+	}
+
+	private static NotFoundException notFound(UUID id) {
+		return new NotFoundException("Booking " + id + " does not exist");
 	}
 }

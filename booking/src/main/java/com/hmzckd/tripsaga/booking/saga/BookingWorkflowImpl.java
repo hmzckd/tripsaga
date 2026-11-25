@@ -48,6 +48,8 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 	private BookingStatus status = BookingStatus.STARTED;
 	private Long totalKurus;
 	private String failure;
+	private String cancelReason;
+	private boolean paid;
 
 	@Override
 	public BookingState book(Booking booking) {
@@ -56,22 +58,26 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 		FlightHold seat;
 		HotelHold room;
 		try {
+			stopIfCancelled();
 			action = "hold seat on " + booking.flightId();
 			compensations.push(new Compensation("cancel seat on " + booking.flightId(),
 					() -> flightUntilDone.cancel(key("flight-hold"))));
 			seat = flight.hold(key("flight-hold"), booking.flightId(), booking.customer());
 			advance(BookingStatus.FLIGHT_HELD, action, seat.status());
+			stopIfCancelled();
 
 			action = "hold room at " + booking.hotelId();
 			compensations.push(new Compensation("cancel room at " + booking.hotelId(),
 					() -> hotelUntilDone.cancel(key("hotel-hold"))));
 			room = hotel.hold(key("hotel-hold"), booking.hotelId(), booking.customer(), booking.nights());
 			advance(BookingStatus.HOTEL_HELD, action, room.status());
+			stopIfCancelled();
 
 			totalKurus = seat.priceKurus() + room.totalKurus();
 			action = "charge " + totalKurus + " kurus";
 			compensations.push(new Compensation("refund payment", () -> paymentUntilDone.refund(key("payment"))));
 			Charge charge = payment.charge(key("payment"), booking.customer(), totalKurus, booking.cardToken());
+			paid = true;
 			advance(BookingStatus.PAYMENT_CAPTURED, action, charge.status());
 		}
 		catch (ActivityFailure ex) {
@@ -79,6 +85,14 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 			steps.add(new Step(action, "FAILED: " + failure));
 			compensate();
 			return finish();
+		}
+		catch (CancelledByCustomer ex) {
+			failure = "cancelled by the customer: " + cancelReason;
+			compensate();
+			return finish();
+		}
+		if (cancelReason != null) {
+			steps.add(new Step("cancel request", "IGNORED: the payment was already captured"));
 		}
 
 		boolean confirmed = attempt("confirm seat on " + seat.flightId(), () -> flightUntilDone.confirm(seat.id()))
@@ -88,9 +102,27 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 	}
 
 	@Override
+	public void cancel(String reason) {
+		if (paid) {
+			steps.add(new Step("cancel request", "IGNORED: the payment was already captured"));
+			return;
+		}
+		if (cancelReason == null) {
+			cancelReason = reason == null || reason.isBlank() ? "no reason given" : reason;
+		}
+	}
+
+	@Override
 	public BookingState state() {
 		return new BookingState(booking.id(), booking.customer(), booking.flightId(), booking.hotelId(),
 				booking.nights(), status, totalKurus, failure, List.copyOf(steps));
+	}
+
+	private void stopIfCancelled() {
+		if (cancelReason != null) {
+			steps.add(new Step("cancel request", "ACCEPTED: " + cancelReason));
+			throw new CancelledByCustomer();
+		}
 	}
 
 	private void compensate() {
@@ -137,5 +169,8 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 	}
 
 	private record Compensation(String action, Runnable undo) {
+	}
+
+	private static final class CancelledByCustomer extends RuntimeException {
 	}
 }

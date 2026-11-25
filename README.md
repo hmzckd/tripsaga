@@ -46,7 +46,11 @@ Work in progress.
    ```
 
    The booking answers `202 Accepted` at once; the saga runs in the background and the workflow `booking-<id>` shows
-   every step in the Temporal UI.
+   every step in the Temporal UI. Until the payment is captured the customer can still cancel:
+
+   ```bash
+   curl -X POST localhost:8080/api/bookings/<id>/cancel -H 'Content-Type: application/json' -d '{"reason":"changed plans"}'
+   ```
 
 4. Try the failure paths. `XQ0000` has no seats, `BJV-DOLU` has no rooms and the card token `tok_declined` is always
    declined. Start a participant with `--tripsaga.faults.enabled=true` to make it slow (`delayMs`), fail the next

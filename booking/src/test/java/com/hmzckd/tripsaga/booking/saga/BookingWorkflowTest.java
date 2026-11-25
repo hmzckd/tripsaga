@@ -244,6 +244,47 @@ class BookingWorkflowTest {
 		undo.verify(flight).cancel("b11-flight-hold");
 	}
 
+	@Test
+	void aCancelDuringTheRoomHoldUndoesBothHoldsAndNeverCharges() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenReturn(new FlightHold(SEAT, "TK2412", "HELD", 245000));
+		when(hotel.hold(anyString(), anyString(), anyString(), anyInt())).thenAnswer(call -> {
+			saga("b12").cancel("changed my plans");
+			return new HotelHold(ROOM, "AYT-LARA", 3, "HELD", 960000);
+		});
+
+		BookingState state = book(new Booking("b12", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_ok"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		assertThat(state.failure()).isEqualTo("cancelled by the customer: changed my plans");
+		assertThat(state.steps()).contains(new Step("cancel request", "ACCEPTED: changed my plans"));
+		verify(payment, never()).charge(anyString(), anyString(), anyLong(), anyString());
+		verify(hotel).cancel("b12-hotel-hold");
+		verify(flight).cancel("b12-flight-hold");
+	}
+
+	@Test
+	void aCancelAfterThePaymentIsIgnored() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenReturn(new FlightHold(SEAT, "TK2412", "HELD", 245000));
+		when(hotel.hold(anyString(), anyString(), anyString(), anyInt()))
+				.thenReturn(new HotelHold(ROOM, "AYT-LARA", 3, "HELD", 960000));
+		when(payment.charge(anyString(), anyString(), anyLong(), anyString())).thenAnswer(call -> {
+			saga("b13").cancel("too late");
+			return new Charge(UUID.randomUUID(), 1205000, "CAPTURED");
+		});
+
+		BookingState state = book(new Booking("b13", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_ok"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CONFIRMED);
+		assertThat(state.steps()).contains(new Step("cancel request", "IGNORED: the payment was already captured"));
+		verify(flight, never()).cancel(anyString());
+	}
+
+	private BookingWorkflow saga(String bookingId) {
+		return env.getWorkflowClient().newWorkflowStub(BookingWorkflow.class, BookingWorkflow.workflowId(bookingId));
+	}
+
 	private static ApplicationFailure rejected(String message, int status) {
 		return ApplicationFailure.newNonRetryableFailure(message, "ParticipantRejected", status);
 	}
