@@ -20,3 +20,9 @@ Terms used in the code, tests and docs of TripSaga.
 | Idempotency-Key | A header that names one logical request. Sending the same key again returns the first answer instead of doing the work twice. |
 | Idempotent | Doing it twice has the same effect as doing it once. |
 | Replay | The answer to a repeated key: the stored result of the first request, marked with `Idempotent-Replayed: true`. |
+| Workflow | Temporal's name for durable code. `BookingWorkflowImpl` is the saga; Temporal records every step it takes so it can resume after a crash. |
+| Activity | One call to the outside world from a workflow, here one HTTP call to a participant service. Temporal retries activities on failure. |
+| Worker | The process that runs workflow and activity code. The `booking` service starts one at boot. |
+| Task queue | The named queue (`booking`) a worker polls for work. Starting a workflow puts work on it. |
+| Event history | Temporal's log of everything that happened in one workflow run. Replaying it rebuilds the workflow's state. |
+| Query | A read-only question to a running or finished workflow, answered from its state. `GET /api/bookings/{id}` uses it. |

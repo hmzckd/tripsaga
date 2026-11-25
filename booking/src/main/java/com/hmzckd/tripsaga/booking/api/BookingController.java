@@ -1,0 +1,64 @@
+package com.hmzckd.tripsaga.booking.api;
+
+import java.net.URI;
+import java.util.List;
+import java.util.UUID;
+
+import jakarta.validation.Valid;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.hmzckd.tripsaga.booking.records.BookingRecords;
+import com.hmzckd.tripsaga.booking.saga.Booking;
+import com.hmzckd.tripsaga.booking.saga.BookingState;
+import com.hmzckd.tripsaga.booking.saga.BookingStatus;
+import com.hmzckd.tripsaga.booking.saga.BookingWorkflow;
+
+import io.temporal.client.WorkflowClient;
+import io.temporal.client.WorkflowNotFoundException;
+import io.temporal.client.WorkflowOptions;
+
+@RestController
+@RequestMapping("/api/bookings")
+class BookingController {
+
+	private final WorkflowClient temporal;
+	private final BookingRecords records;
+
+	BookingController(WorkflowClient temporal, BookingRecords records) {
+		this.temporal = temporal;
+		this.records = records;
+	}
+
+	@PostMapping
+	ResponseEntity<BookingState> book(@Valid @RequestBody BookingRequest request) {
+		Booking booking = new Booking(UUID.randomUUID().toString(), request.customer(), request.flightId(),
+				request.hotelId(), request.nights(), request.cardToken());
+
+		BookingWorkflow saga = temporal.newWorkflowStub(BookingWorkflow.class, WorkflowOptions.newBuilder()
+				.setWorkflowId(BookingWorkflow.workflowId(booking.id()))
+				.setTaskQueue(BookingWorkflow.TASK_QUEUE)
+				.build());
+		WorkflowClient.start(saga::book, booking);
+
+		BookingState started = new BookingState(booking.id(), booking.customer(), booking.flightId(),
+				booking.hotelId(), booking.nights(), BookingStatus.STARTED, null, List.of());
+		return ResponseEntity.accepted().location(URI.create("/api/bookings/" + booking.id())).body(started);
+	}
+
+	@GetMapping("/{id}")
+	BookingState get(@PathVariable UUID id) {
+		try {
+			return temporal.newWorkflowStub(BookingWorkflow.class, BookingWorkflow.workflowId(id.toString())).state();
+		}
+		catch (WorkflowNotFoundException ex) {
+			return records.find(id).orElseThrow(() -> new NotFoundException("Booking " + id + " does not exist"));
+		}
+	}
+}

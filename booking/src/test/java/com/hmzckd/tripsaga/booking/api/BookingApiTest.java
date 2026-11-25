@@ -1,0 +1,131 @@
+package com.hmzckd.tripsaga.booking.api;
+
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
+import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlMatching;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
+import java.time.Duration;
+import java.util.Map;
+import java.util.UUID;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestClient;
+
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.hmzckd.tripsaga.booking.IntegrationTest;
+import com.hmzckd.tripsaga.booking.Participants;
+import com.hmzckd.tripsaga.booking.records.BookingRecords;
+import com.hmzckd.tripsaga.booking.saga.BookingStatus;
+
+@IntegrationTest
+class BookingApiTest {
+
+	static final String SEAT = "11111111-1111-1111-1111-111111111111";
+	static final String ROOM = "22222222-2222-2222-2222-222222222222";
+
+	@LocalServerPort
+	int port;
+
+	@Autowired
+	Participants participants;
+
+	@Autowired
+	BookingRecords records;
+
+	RestClient http;
+
+	@BeforeEach
+	void setUp() {
+		participants.reset();
+		http = RestClient.builder()
+				.baseUrl("http://localhost:" + port)
+				.defaultStatusHandler(HttpStatusCode::isError, (request, response) -> {
+				})
+				.build();
+	}
+
+	@Test
+	void aBookingRunsTheSagaAndIsConfirmed() {
+		stub(participants.flight, "/holds", 201,
+				"{\"id\":\"" + SEAT + "\",\"flightId\":\"TK2412\",\"status\":\"HELD\",\"priceKurus\":245000}");
+		stub(participants.hotel, "/holds", 201, "{\"id\":\"" + ROOM
+				+ "\",\"hotelId\":\"AYT-LARA\",\"nights\":3,\"status\":\"HELD\",\"totalKurus\":960000}");
+		stub(participants.payment, "/charges", 201,
+				"{\"id\":\"" + UUID.randomUUID() + "\",\"amountKurus\":1205000,\"status\":\"CAPTURED\"}");
+		stub(participants.flight, "/holds/" + SEAT + "/confirm", 200, "{}");
+		stub(participants.hotel, "/holds/" + ROOM + "/confirm", 200, "{}");
+
+		ResponseEntity<Map<String, Object>> accepted = book();
+
+		assertThat(accepted.getStatusCode().value()).isEqualTo(202);
+		String id = (String) accepted.getBody().get("id");
+		assertThat(accepted.getHeaders().getLocation()).hasPath("/api/bookings/" + id);
+
+		await().atMost(Duration.ofSeconds(10))
+				.until(() -> "CONFIRMED".equals(get(id).getBody().get("status")));
+
+		assertThat(get(id).getBody()).containsEntry("totalKurus", 1205000);
+		participants.flight.verify(postRequestedFor(urlEqualTo("/holds"))
+				.withHeader("Idempotency-Key", equalTo(id + "-flight-hold"))
+				.withRequestBody(equalToJson("{\"flightId\":\"TK2412\",\"passenger\":\"Ayşe Yılmaz\"}")));
+		participants.payment.verify(postRequestedFor(urlEqualTo("/charges"))
+				.withHeader("Idempotency-Key", equalTo(id + "-payment"))
+				.withRequestBody(equalToJson(
+						"{\"customer\":\"Ayşe Yılmaz\",\"amountKurus\":1205000,\"cardToken\":\"tok_ok\"}")));
+		assertThat(records.find(UUID.fromString(id))).hasValueSatisfying(
+				saved -> assertThat(saved.status()).isEqualTo(BookingStatus.CONFIRMED));
+	}
+
+	@Test
+	void anInvalidRequestIsRejectedBeforeTheSagaStarts() {
+		ResponseEntity<String> response = http.post().uri("/api/bookings")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(Map.of("customer", "Ayşe Yılmaz", "flightId", "TK2412", "hotelId", "AYT-LARA", "nights", 0,
+						"cardToken", "tok_ok"))
+				.retrieve()
+				.toEntity(String.class);
+
+		assertThat(response.getStatusCode().value()).isEqualTo(400);
+		participants.flight.verify(0, postRequestedFor(urlMatching(".*")));
+	}
+
+	@Test
+	void anUnknownBookingIsNotFound() {
+		assertThat(get(UUID.randomUUID().toString()).getStatusCode().value()).isEqualTo(404);
+	}
+
+	private void stub(WireMockServer server, String path, int status, String body) {
+		server.stubFor(post(urlEqualTo(path)).willReturn(aResponse()
+				.withStatus(status)
+				.withHeader("Content-Type", "application/json")
+				.withBody(body)));
+	}
+
+	private ResponseEntity<Map<String, Object>> book() {
+		return http.post().uri("/api/bookings")
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(Map.of("customer", "Ayşe Yılmaz", "flightId", "TK2412", "hotelId", "AYT-LARA", "nights", 3,
+						"cardToken", "tok_ok"))
+				.retrieve()
+				.toEntity(new ParameterizedTypeReference<>() {
+				});
+	}
+
+	private ResponseEntity<Map<String, Object>> get(String id) {
+		return http.get().uri("/api/bookings/{id}", id).retrieve().toEntity(new ParameterizedTypeReference<>() {
+		});
+	}
+}

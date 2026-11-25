@@ -1,6 +1,16 @@
 spring:
   application:
     name: booking
+  datasource:
+    url: jdbc:postgresql://localhost:5440/booking
+    username: booking
+    password: booking
+  mvc:
+    problemdetails:
+      enabled: true
+  threads:
+    virtual:
+      enabled: true
 
 server:
   port: 8080
@@ -10,3 +20,12 @@ management:
     web:
       exposure:
         include: health
+
+tripsaga:
+  temporal:
+    target: localhost:7233
+    namespace: default
+  participants:
+    flight-url: http://localhost:8081
+    hotel-url: http://localhost:8082
+    payment-url: http://localhost:8083

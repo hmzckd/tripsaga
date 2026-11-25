@@ -17,13 +17,35 @@ Work in progress.
 
 ## Run locally
 
-```bash
-docker compose up -d
-./mvnw -pl flight spring-boot:run
-```
+1. Start PostgreSQL and the Temporal dev server:
 
-PostgreSQL listens on port 5440 and holds one database and one user per service (`flight`, `hotel`, `payment`,
-`booking`), created by [`docker/postgres/init.sql`](docker/postgres/init.sql).
+   ```bash
+   docker compose up -d
+   ```
+
+   PostgreSQL listens on port 5440 and holds one database and one user per service (`flight`, `hotel`, `payment`,
+   `booking`), created by [`docker/postgres/init.sql`](docker/postgres/init.sql). Temporal listens on port 7233 and its
+   Web UI is at http://localhost:8233.
+
+2. Start the four services, each in its own terminal:
+
+   ```bash
+   ./mvnw -pl flight spring-boot:run
+   ./mvnw -pl hotel spring-boot:run
+   ./mvnw -pl payment spring-boot:run
+   ./mvnw -pl booking spring-boot:run
+   ```
+
+3. Book a trip and follow it:
+
+   ```bash
+   curl -i -X POST localhost:8080/api/bookings -H 'Content-Type: application/json' \
+     -d '{"customer":"Ayse Yilmaz","flightId":"TK2412","hotelId":"AYT-LARA","nights":3,"cardToken":"tok_ok"}'
+   curl localhost:8080/api/bookings/<id>
+   ```
+
+   The booking answers `202 Accepted` at once; the saga runs in the background and the workflow `booking-<id>` shows
+   every step in the Temporal UI.
 
 ## Checks
 
