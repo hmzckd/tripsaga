@@ -1,6 +1,16 @@
 spring:
   application:
     name: payment
+  datasource:
+    url: jdbc:postgresql://localhost:5440/payment
+    username: payment
+    password: payment
+  mvc:
+    problemdetails:
+      enabled: true
+  threads:
+    virtual:
+      enabled: true
 
 server:
   port: 8083

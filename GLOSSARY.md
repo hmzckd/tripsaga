@@ -14,3 +14,6 @@ Terms used in the code, tests and docs of TripSaga.
 | Hold | A temporary reservation: the seat or room is taken out of stock but not sold yet. A hold is later confirmed or cancelled. |
 | Confirm | Turn a hold into a final reservation. A confirmed hold can no longer be cancelled by the saga. |
 | Database per service | Each service has its own PostgreSQL database and user and cannot read the others. This is why a booking needs a saga instead of one transaction. |
+| Capture | Taking the money from the card. A captured charge is the point where the customer has paid. |
+| Refund | Giving captured money back. The compensation of a capture. |
+| Card token | A stand-in for card details. `tok_declined` makes the fake payment service decline; any other token is captured. |

@@ -1,6 +1,16 @@
 spring:
   application:
     name: hotel
+  datasource:
+    url: jdbc:postgresql://localhost:5440/hotel
+    username: hotel
+    password: hotel
+  mvc:
+    problemdetails:
+      enabled: true
+  threads:
+    virtual:
+      enabled: true
 
 server:
   port: 8082
