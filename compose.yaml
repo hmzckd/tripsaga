@@ -29,6 +29,77 @@ services:
       timeout: 5s
       retries: 20
 
+  flight:
+    build:
+      context: .
+      args:
+        MODULE: flight
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/flight
+      TRIPSAGA_FAULTS_ENABLED: "true"
+    ports:
+      - "8081:8081"
+    profiles: ["app"]
+
+  hotel:
+    build:
+      context: .
+      args:
+        MODULE: hotel
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hotel
+      TRIPSAGA_FAULTS_ENABLED: "true"
+    ports:
+      - "8082:8082"
+    profiles: ["app"]
+
+  payment:
+    build:
+      context: .
+      args:
+        MODULE: payment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/payment
+      TRIPSAGA_FAULTS_ENABLED: "true"
+    ports:
+      - "8083:8083"
+    profiles: ["app"]
+
+  booking:
+    build:
+      context: .
+      args:
+        MODULE: booking
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_healthy
+      flight:
+        condition: service_started
+      hotel:
+        condition: service_started
+      payment:
+        condition: service_started
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/booking
+      TRIPSAGA_TEMPORAL_TARGET: temporal:7233
+      TRIPSAGA_PARTICIPANTS_FLIGHT_URL: http://flight:8081
+      TRIPSAGA_PARTICIPANTS_HOTEL_URL: http://hotel:8082
+      TRIPSAGA_PARTICIPANTS_PAYMENT_URL: http://payment:8083
+    ports:
+      - "8080:8080"
+    profiles: ["app"]
+
 volumes:
   postgres-data:
   temporal-data:
