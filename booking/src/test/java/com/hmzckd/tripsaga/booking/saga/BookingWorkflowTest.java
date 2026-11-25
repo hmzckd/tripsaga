@@ -20,6 +20,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 
 import io.temporal.client.WorkflowClient;
@@ -359,6 +360,20 @@ class BookingWorkflowTest {
 		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
 		assertThat(state.failure()).isEqualTo("cancelled by the customer: found a cheaper trip");
 		verify(payment).refund("b17-payment");
+	}
+
+	@Test
+	void theBookingIsRecordedWhenItStartsAndWhenItEnds() {
+		holdsSucceed();
+		when(payment.charge(anyString(), anyString(), anyLong(), anyString()))
+				.thenReturn(new Charge(UUID.randomUUID(), 1205000, "CAPTURED"));
+
+		book(new Booking("b18", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_ok"));
+
+		ArgumentCaptor<BookingState> saved = ArgumentCaptor.forClass(BookingState.class);
+		verify(records, times(2)).save(saved.capture());
+		assertThat(saved.getAllValues()).extracting(BookingState::status)
+				.containsExactly(BookingStatus.STARTED, BookingStatus.CONFIRMED);
 	}
 
 	private void holdsSucceed() {

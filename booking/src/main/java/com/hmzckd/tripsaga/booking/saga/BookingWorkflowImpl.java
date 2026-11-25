@@ -14,6 +14,7 @@ import io.temporal.workflow.Workflow;
 
 public class BookingWorkflowImpl implements BookingWorkflow {
 
+	static final String RECORD_ON_START = "record-on-start";
 	static final Duration PAYMENT_TIMEOUT = Duration.ofMinutes(15);
 	static final Duration PAYMENT_CHECK_INTERVAL = Duration.ofSeconds(10);
 
@@ -60,6 +61,9 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 	@Override
 	public BookingState book(Booking booking) {
 		this.booking = booking;
+		if (Workflow.getVersion(RECORD_ON_START, Workflow.DEFAULT_VERSION, 1) >= 1) {
+			records.save(state());
+		}
 		String action = null;
 		FlightHold seat;
 		HotelHold room;

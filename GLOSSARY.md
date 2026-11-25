@@ -42,3 +42,7 @@ Terms used in the code, tests and docs of TripSaga.
 | Durable timer | A wait inside a workflow (`Workflow.await`, `Workflow.sleep`) that Temporal stores on the server. It survives worker restarts; a 15-minute wait costs nothing while it waits. |
 | Time skipping | The Temporal test environment jumps over timers when nothing else is running, so a 15-minute timeout is tested in milliseconds. |
 | Void | Cancelling a pending charge before the money was captured. The refund endpoints void pending charges. |
+| Replay | Rebuilding a workflow's state by running its code against its event history. Finished activities are not called again; their results are read from the history. |
+| Determinism | Workflow code must make the same decisions every time it replays the same history, so it may not read clocks, random numbers or the network directly. |
+| Durable execution | Code that survives process crashes: after a restart Temporal replays the history and the workflow continues from the step where it stopped. |
+| Workflow versioning | `Workflow.getVersion` lets new runs take a new path while runs that started on the old code keep the old one. |
