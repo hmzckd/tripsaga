@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: flight
+
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
