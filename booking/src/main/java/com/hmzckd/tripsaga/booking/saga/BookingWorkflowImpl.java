@@ -39,6 +39,7 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 	private final PaymentActivities payment = Workflow.newActivityStub(PaymentActivities.class, FORWARD);
 	private final FlightActivities flightUntilDone = Workflow.newActivityStub(FlightActivities.class, UNTIL_DONE);
 	private final HotelActivities hotelUntilDone = Workflow.newActivityStub(HotelActivities.class, UNTIL_DONE);
+	private final PaymentActivities paymentUntilDone = Workflow.newActivityStub(PaymentActivities.class, UNTIL_DONE);
 	private final RecordActivities records = Workflow.newActivityStub(RecordActivities.class, UNTIL_DONE);
 
 	private final List<Step> steps = new ArrayList<>();
@@ -56,19 +57,20 @@ public class BookingWorkflowImpl implements BookingWorkflow {
 		HotelHold room;
 		try {
 			action = "hold seat on " + booking.flightId();
+			compensations.push(new Compensation("cancel seat on " + booking.flightId(),
+					() -> flightUntilDone.cancel(key("flight-hold"))));
 			seat = flight.hold(key("flight-hold"), booking.flightId(), booking.customer());
-			compensations.push(new Compensation("cancel seat on " + seat.flightId(),
-					() -> flightUntilDone.cancel(seat.id())));
 			advance(BookingStatus.FLIGHT_HELD, action, seat.status());
 
 			action = "hold room at " + booking.hotelId();
+			compensations.push(new Compensation("cancel room at " + booking.hotelId(),
+					() -> hotelUntilDone.cancel(key("hotel-hold"))));
 			room = hotel.hold(key("hotel-hold"), booking.hotelId(), booking.customer(), booking.nights());
-			compensations.push(new Compensation("cancel room at " + room.hotelId(),
-					() -> hotelUntilDone.cancel(room.id())));
 			advance(BookingStatus.HOTEL_HELD, action, room.status());
 
 			totalKurus = seat.priceKurus() + room.totalKurus();
 			action = "charge " + totalKurus + " kurus";
+			compensations.push(new Compensation("refund payment", () -> paymentUntilDone.refund(key("payment"))));
 			Charge charge = payment.charge(key("payment"), booking.customer(), totalKurus, booking.cardToken());
 			advance(BookingStatus.PAYMENT_CAPTURED, action, charge.status());
 		}

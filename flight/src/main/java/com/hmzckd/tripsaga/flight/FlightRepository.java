@@ -12,7 +12,7 @@ class FlightRepository {
 
 	private static final String SELECT_HOLD = """
 			SELECT h.id, h.flight_id, h.passenger, h.status, f.price_kurus
-			FROM holds h JOIN flights f ON f.id = h.flight_id
+			FROM holds h LEFT JOIN flights f ON f.id = h.flight_id
 			""";
 
 	private final JdbcClient jdbc;
@@ -51,6 +51,17 @@ class FlightRepository {
 				.param("key", idempotencyKey)
 				.param("flightId", request.flightId())
 				.param("passenger", request.passenger())
+				.update() == 1;
+	}
+
+	boolean insertTombstone(UUID id, String idempotencyKey) {
+		return jdbc.sql("""
+				INSERT INTO holds (id, idempotency_key, status)
+				VALUES (:id, :key, 'CANCELLED')
+				ON CONFLICT (idempotency_key) DO NOTHING
+				""")
+				.param("id", id)
+				.param("key", idempotencyKey)
 				.update() == 1;
 	}
 

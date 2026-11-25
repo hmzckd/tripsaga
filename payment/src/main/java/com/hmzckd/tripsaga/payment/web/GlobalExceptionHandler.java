@@ -15,6 +15,11 @@ class GlobalExceptionHandler {
 		return problem;
 	}
 
+	@ExceptionHandler(ConflictException.class)
+	ProblemDetail handleConflict(ConflictException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
 	@ExceptionHandler(UnprocessableException.class)
 	ProblemDetail handleUnprocessable(UnprocessableException ex) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_CONTENT, ex.getMessage());

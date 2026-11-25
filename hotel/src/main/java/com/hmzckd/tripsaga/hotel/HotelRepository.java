@@ -12,7 +12,7 @@ class HotelRepository {
 
 	private static final String SELECT_HOLD = """
 			SELECT h.id, h.hotel_id, h.guest, h.nights, h.status, h.nights * o.price_per_night_kurus AS total_kurus
-			FROM holds h JOIN hotels o ON o.id = h.hotel_id
+			FROM holds h LEFT JOIN hotels o ON o.id = h.hotel_id
 			""";
 
 	private final JdbcClient jdbc;
@@ -52,6 +52,17 @@ class HotelRepository {
 				.param("hotelId", request.hotelId())
 				.param("guest", request.guest())
 				.param("nights", request.nights())
+				.update() == 1;
+	}
+
+	boolean insertTombstone(UUID id, String idempotencyKey) {
+		return jdbc.sql("""
+				INSERT INTO holds (id, idempotency_key, status)
+				VALUES (:id, :key, 'CANCELLED')
+				ON CONFLICT (idempotency_key) DO NOTHING
+				""")
+				.param("id", id)
+				.param("key", idempotencyKey)
 				.update() == 1;
 	}
 

@@ -30,7 +30,7 @@ class FaultsController {
 
 	@DeleteMapping
 	FaultSettings reset() {
-		faults.apply(new FaultSettings(0, 0));
+		faults.apply(new FaultSettings(null, null, null));
 		return faults.settings();
 	}
 }

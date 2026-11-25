@@ -27,4 +27,10 @@ class PaymentClient implements PaymentActivities {
 				.retrieve()
 				.body(Charge.class));
 	}
+
+	@Override
+	public void refund(String chargeIdempotencyKey) {
+		Http.call(() -> http.post().uri("/charges/by-key/{key}/refund", chargeIdempotencyKey).retrieve()
+				.toBodilessEntity());
+	}
 }

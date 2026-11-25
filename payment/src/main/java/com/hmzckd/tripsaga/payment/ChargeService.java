@@ -6,6 +6,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.hmzckd.tripsaga.payment.web.ConflictException;
 import com.hmzckd.tripsaga.payment.web.NotFoundException;
 import com.hmzckd.tripsaga.payment.ChargeRepository.ChargeRow;
 import com.hmzckd.tripsaga.payment.web.PaymentDeclinedException;
@@ -34,6 +35,9 @@ public class ChargeService {
 	}
 
 	private static ChargeResult replay(ChargeRow earlier, ChargeRequest request) {
+		if (earlier.isTombstone()) {
+			throw new ConflictException("The charge for this Idempotency-Key was cancelled before it arrived");
+		}
 		if (!earlier.sameRequestAs(request)) {
 			throw new UnprocessableException("This Idempotency-Key was already used for a different charge");
 		}
@@ -48,6 +52,14 @@ public class ChargeService {
 	public Charge refund(UUID id) {
 		repository.changeStatus(id, ChargeStatus.CAPTURED, ChargeStatus.REFUNDED);
 		return get(id);
+	}
+
+	@Transactional
+	public Charge refundByKey(String idempotencyKey) {
+		if (repository.insertTombstone(UUID.randomUUID(), idempotencyKey)) {
+			return repository.findByKey(idempotencyKey).orElseThrow().charge();
+		}
+		return refund(repository.findByKey(idempotencyKey).orElseThrow().id());
 	}
 
 	static Charge answer(Charge charge) {

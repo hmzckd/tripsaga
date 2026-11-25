@@ -6,4 +6,6 @@ import io.temporal.activity.ActivityInterface;
 public interface PaymentActivities {
 
 	Charge charge(String idempotencyKey, String customer, long amountKurus, String cardToken);
+
+	void refund(String chargeIdempotencyKey);
 }

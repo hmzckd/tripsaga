@@ -43,7 +43,7 @@ class FaultsTest {
 
 	@Test
 	void failedRequestsAreNotProcessed() {
-		faults(Map.of("delayMs", 0, "failNext", 2));
+		faults(Map.of("delayMs", 0, "failNext", 2, "loseNext", 0));
 
 		assertThat(holdStatus()).isEqualTo(503);
 		assertThat(holdStatus()).isEqualTo(503);
@@ -53,8 +53,19 @@ class FaultsTest {
 	}
 
 	@Test
+	void aLostAnswerMeansTheWorkWasDoneAndARetryReplaysIt() {
+		faults(Map.of("loseNext", 1));
+		String key = UUID.randomUUID().toString();
+
+		assertThat(holdStatus(key)).isEqualTo(503);
+		assertThat(seatsFree()).isEqualTo(49);
+		assertThat(holdStatus(key)).isEqualTo(200);
+		assertThat(seatsFree()).isEqualTo(49);
+	}
+
+	@Test
 	void aDelayIsAddedToEveryWrite() {
-		faults(Map.of("delayMs", 300, "failNext", 0));
+		faults(Map.of("delayMs", 300, "failNext", 0, "loseNext", 0));
 
 		long started = System.nanoTime();
 		holdStatus();
@@ -64,7 +75,7 @@ class FaultsTest {
 
 	@Test
 	void readsAreNeverFailed() {
-		faults(Map.of("delayMs", 0, "failNext", 5));
+		faults(Map.of("delayMs", 0, "failNext", 5, "loseNext", 0));
 
 		assertThat(http.get().uri("/flights").retrieve().toBodilessEntity().getStatusCode().value()).isEqualTo(200);
 	}
@@ -75,8 +86,12 @@ class FaultsTest {
 	}
 
 	private int holdStatus() {
+		return holdStatus(UUID.randomUUID().toString());
+	}
+
+	private int holdStatus(String key) {
 		return http.post().uri("/holds")
-				.header("Idempotency-Key", UUID.randomUUID().toString())
+				.header("Idempotency-Key", key)
 				.contentType(MediaType.APPLICATION_JSON)
 				.body(new HoldRequest("TK2412", "Ayşe Yılmaz"))
 				.retrieve()

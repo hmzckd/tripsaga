@@ -41,4 +41,9 @@ class ChargeController {
 	Charge refund(@PathVariable UUID id) {
 		return charges.refund(id);
 	}
+
+	@PostMapping("/charges/by-key/{idempotencyKey}/refund")
+	Charge refundByKey(@PathVariable String idempotencyKey) {
+		return charges.refundByKey(idempotencyKey);
+	}
 }

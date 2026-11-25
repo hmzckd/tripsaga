@@ -96,7 +96,8 @@ class BookingApiTest {
 				"{\"id\":\"" + SEAT + "\",\"flightId\":\"TK2412\",\"status\":\"HELD\",\"priceKurus\":245000}");
 		stub(participants.hotel, "/holds", 409, "{\"title\":\"Conflict\",\"status\":409,"
 				+ "\"detail\":\"Hotel BJV-DOLU has no free rooms\"}");
-		stub(participants.flight, "/holds/" + SEAT + "/cancel", 200, "{}");
+		stubAny(participants.flight, "/holds/by-key/.*/cancel");
+		stubAny(participants.hotel, "/holds/by-key/.*/cancel");
 
 		String id = (String) book().getBody().get("id");
 
@@ -105,7 +106,8 @@ class BookingApiTest {
 
 		assertThat(get(id).getBody()).containsEntry("failure", "Hotel BJV-DOLU has no free rooms");
 		participants.hotel.verify(1, postRequestedFor(urlEqualTo("/holds")));
-		participants.flight.verify(postRequestedFor(urlEqualTo("/holds/" + SEAT + "/cancel")));
+		participants.hotel.verify(postRequestedFor(urlEqualTo("/holds/by-key/" + id + "-hotel-hold/cancel")));
+		participants.flight.verify(postRequestedFor(urlEqualTo("/holds/by-key/" + id + "-flight-hold/cancel")));
 		participants.payment.verify(0, postRequestedFor(urlMatching(".*")));
 	}
 
@@ -157,6 +159,13 @@ class BookingApiTest {
 				.withStatus(status)
 				.withHeader("Content-Type", "application/json")
 				.withBody(body)));
+	}
+
+	private void stubAny(WireMockServer server, String pathPattern) {
+		server.stubFor(post(urlMatching(pathPattern)).willReturn(aResponse()
+				.withStatus(200)
+				.withHeader("Content-Type", "application/json")
+				.withBody("{}")));
 	}
 
 	private ResponseEntity<Map<String, Object>> book() {

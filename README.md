@@ -49,11 +49,12 @@ Work in progress.
    every step in the Temporal UI.
 
 4. Try the failure paths. `XQ0000` has no seats, `BJV-DOLU` has no rooms and the card token `tok_declined` is always
-   declined. Start a participant with `--tripsaga.faults.enabled=true` to make it slow or failing on demand:
+   declined. Start a participant with `--tripsaga.faults.enabled=true` to make it slow (`delayMs`), fail the next
+   writes without doing them (`failNext`) or do the next writes and lose the answer (`loseNext`):
 
    ```bash
    ./mvnw -pl hotel spring-boot:run -Dspring-boot.run.arguments=--tripsaga.faults.enabled=true
-   curl -X PUT localhost:8082/admin/faults -H 'Content-Type: application/json' -d '{"delayMs":0,"failNext":2}'
+   curl -X PUT localhost:8082/admin/faults -H 'Content-Type: application/json' -d '{"failNext":2}'
    ```
 
 ## Checks

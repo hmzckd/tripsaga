@@ -35,7 +35,8 @@ class FlightClient implements FlightActivities {
 	}
 
 	@Override
-	public void cancel(UUID holdId) {
-		Http.call(() -> http.post().uri("/holds/{id}/cancel", holdId).retrieve().toBodilessEntity());
+	public void cancel(String holdIdempotencyKey) {
+		Http.call(() -> http.post().uri("/holds/by-key/{key}/cancel", holdIdempotencyKey).retrieve()
+				.toBodilessEntity());
 	}
 }

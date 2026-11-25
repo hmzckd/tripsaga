@@ -52,4 +52,9 @@ class HotelController {
 	Hold cancel(@PathVariable UUID id) {
 		return holds.cancel(id);
 	}
+
+	@PostMapping("/holds/by-key/{idempotencyKey}/cancel")
+	Hold cancelByKey(@PathVariable String idempotencyKey) {
+		return holds.cancelByKey(idempotencyKey);
+	}
 }

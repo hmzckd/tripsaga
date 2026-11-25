@@ -106,8 +106,9 @@ class BookingWorkflowTest {
 		assertThat(state.steps()).containsExactly(
 				new Step("hold seat on TK2412", "HELD"),
 				new Step("hold room at BJV-DOLU", "FAILED: Hotel BJV-DOLU has no free rooms"),
+				new Step("cancel room at BJV-DOLU", "DONE"),
 				new Step("cancel seat on TK2412", "DONE"));
-		verify(flight).cancel(SEAT);
+		verify(flight).cancel("b3-flight-hold");
 		verify(payment, never()).charge(anyString(), anyString(), anyLong(), anyString());
 		verify(flight, never()).confirm(SEAT);
 		verify(records).save(state);
@@ -125,24 +126,26 @@ class BookingWorkflowTest {
 		BookingState state = book(new Booking("b4", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_declined"));
 
 		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
-		InOrder undo = inOrder(hotel, flight);
-		undo.verify(hotel).cancel(ROOM);
-		undo.verify(flight).cancel(SEAT);
+		InOrder undo = inOrder(payment, hotel, flight);
+		undo.verify(payment).refund("b4-payment");
+		undo.verify(hotel).cancel("b4-hotel-hold");
+		undo.verify(flight).cancel("b4-flight-hold");
 		verify(flight, never()).confirm(SEAT);
 		verify(hotel, never()).confirm(ROOM);
 	}
 
 	@Test
-	void aSoldOutFlightHasNothingToUndo() {
+	void aSoldOutFlightTouchesNothingElse() {
 		when(flight.hold(anyString(), anyString(), anyString()))
 				.thenThrow(rejected("Flight XQ0000 has no free seats", 409));
 
 		BookingState state = book(new Booking("b5", "Ayşe Yılmaz", "XQ0000", "AYT-LARA", 3, "tok_ok"));
 
 		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
-		assertThat(state.steps()).hasSize(1);
+		assertThat(state.steps()).hasSize(2);
 		verify(hotel, never()).hold(anyString(), anyString(), anyString(), anyInt());
-		verify(flight, never()).cancel(SEAT);
+		verify(hotel, never()).cancel(anyString());
+		verify(flight).cancel("b5-flight-hold");
 	}
 
 	@Test
@@ -174,7 +177,8 @@ class BookingWorkflowTest {
 		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
 		assertThat(state.failure()).isEqualTo("503 Service Unavailable");
 		verify(hotel, times(4)).hold("b7-hotel-hold", "AYT-LARA", "Ayşe Yılmaz", 3);
-		verify(flight).cancel(SEAT);
+		verify(hotel).cancel("b7-hotel-hold");
+		verify(flight).cancel("b7-flight-hold");
 	}
 
 	@Test
@@ -184,12 +188,12 @@ class BookingWorkflowTest {
 		when(hotel.hold(anyString(), anyString(), anyString(), anyInt()))
 				.thenThrow(rejected("Hotel BJV-DOLU has no free rooms", 409));
 		IllegalStateException outage = new IllegalStateException("503 Service Unavailable");
-		doThrow(outage, outage, outage, outage, outage).doNothing().when(flight).cancel(SEAT);
+		doThrow(outage, outage, outage, outage, outage).doNothing().when(flight).cancel("b8-flight-hold");
 
 		BookingState state = book(new Booking("b8", "Ayşe Yılmaz", "TK2412", "BJV-DOLU", 3, "tok_ok"));
 
 		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
-		verify(flight, times(6)).cancel(SEAT);
+		verify(flight, times(6)).cancel("b8-flight-hold");
 	}
 
 	@Test
@@ -206,8 +210,38 @@ class BookingWorkflowTest {
 
 		assertThat(state.status()).isEqualTo(BookingStatus.NEEDS_ATTENTION);
 		verify(hotel).confirm(ROOM);
-		verify(hotel, never()).cancel(ROOM);
-		verify(flight, never()).cancel(SEAT);
+		verify(hotel, never()).cancel(anyString());
+		verify(flight, never()).cancel(anyString());
+		verify(payment, never()).refund(anyString());
+	}
+
+	@Test
+	void aSeatWhoseAnswerWasLostIsStillCancelled() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenThrow(new IllegalStateException("503 the request was processed but the answer was lost"));
+
+		BookingState state = book(new Booking("b10", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_ok"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		verify(flight).cancel("b10-flight-hold");
+	}
+
+	@Test
+	void aChargeWhoseAnswerWasLostIsRefundedAndTheHoldsAreCancelled() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenReturn(new FlightHold(SEAT, "TK2412", "HELD", 245000));
+		when(hotel.hold(anyString(), anyString(), anyString(), anyInt()))
+				.thenReturn(new HotelHold(ROOM, "AYT-LARA", 3, "HELD", 960000));
+		when(payment.charge(anyString(), anyString(), anyLong(), anyString()))
+				.thenThrow(new IllegalStateException("503 the request was processed but the answer was lost"));
+
+		BookingState state = book(new Booking("b11", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_ok"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		InOrder undo = inOrder(payment, hotel, flight);
+		undo.verify(payment).refund("b11-payment");
+		undo.verify(hotel).cancel("b11-hotel-hold");
+		undo.verify(flight).cancel("b11-flight-hold");
 	}
 
 	private static ApplicationFailure rejected(String message, int status) {

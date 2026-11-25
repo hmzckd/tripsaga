@@ -51,7 +51,7 @@ class HoldsTest {
 
 		assertThat(response.getStatusCode().value()).isEqualTo(201);
 		assertThat(response.getBody().status()).isEqualTo(HoldStatus.HELD);
-		assertThat(response.getBody().priceKurus()).isEqualTo(245000);
+		assertThat(response.getBody().priceKurus()).isEqualTo(245000L);
 		assertThat(seatsFree("TK2412")).isEqualTo(49);
 	}
 

@@ -45,7 +45,7 @@ class HoldsTest {
 
 		assertThat(response.getStatusCode().value()).isEqualTo(201);
 		assertThat(response.getBody().status()).isEqualTo(HoldStatus.HELD);
-		assertThat(response.getBody().totalKurus()).isEqualTo(3 * 320000);
+		assertThat(response.getBody().totalKurus()).isEqualTo(3L * 320000);
 		assertThat(roomsFree("AYT-LARA")).isEqualTo(19);
 	}
 

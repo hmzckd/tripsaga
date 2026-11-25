@@ -44,6 +44,9 @@ public class HoldService {
 	}
 
 	private static HoldResult replay(Hold earlier, HoldRequest request) {
+		if (earlier.hotelId() == null) {
+			throw new ConflictException("The hold for this Idempotency-Key was cancelled before it arrived");
+		}
 		if (!earlier.hotelId().equals(request.hotelId()) || !earlier.guest().equals(request.guest())
 				|| earlier.nights() != request.nights()) {
 			throw new UnprocessableException("This Idempotency-Key was already used for a different hold");
@@ -80,5 +83,13 @@ public class HoldService {
 			return hold;
 		}
 		throw new ConflictException("Hold " + id + " is " + hold.status() + " and cannot be cancelled");
+	}
+
+	@Transactional
+	public Hold cancelByKey(String idempotencyKey) {
+		if (repository.insertTombstone(UUID.randomUUID(), idempotencyKey)) {
+			return repository.findHoldByKey(idempotencyKey).orElseThrow();
+		}
+		return cancel(repository.findHoldByKey(idempotencyKey).orElseThrow().id());
 	}
 }

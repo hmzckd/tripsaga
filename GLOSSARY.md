@@ -33,3 +33,6 @@ Terms used in the code, tests and docs of TripSaga.
 | Non-retryable failure | A failure Temporal must not repeat. A participant's `4xx` answer becomes one. |
 | Needs attention | The end state of a booking whose compensation or confirm was rejected. A person has to look at it. |
 | Fault injection | Demo-only switches in the participant services (`/admin/faults`, enabled with `tripsaga.faults.enabled=true`) that slow down or fail writes. |
+| Unknown outcome | A call that timed out or lost its answer. The work may or may not have been done. |
+| Tombstone | A `CANCELLED` row that holds only an idempotency key. It records that a hold or charge was cancelled before it arrived, so a late arrival is refused. |
+| Lost answer | A fault (`loseNext`) where the participant does the work and then answers `503`, the clearest way to show an unknown outcome. |

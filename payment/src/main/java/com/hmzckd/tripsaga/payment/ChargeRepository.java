@@ -30,6 +30,17 @@ class ChargeRepository {
 				.update() == 1;
 	}
 
+	boolean insertTombstone(UUID id, String idempotencyKey) {
+		return jdbc.sql("""
+				INSERT INTO charges (id, idempotency_key, status)
+				VALUES (:id, :key, 'CANCELLED')
+				ON CONFLICT (idempotency_key) DO NOTHING
+				""")
+				.param("id", id)
+				.param("key", idempotencyKey)
+				.update() == 1;
+	}
+
 	Optional<ChargeRow> findByKey(String idempotencyKey) {
 		return jdbc.sql("""
 				SELECT id, customer, amount_kurus, card_token, status FROM charges
@@ -58,10 +69,14 @@ class ChargeRepository {
 				.update() == 1;
 	}
 
-	record ChargeRow(UUID id, String customer, long amountKurus, String cardToken, ChargeStatus status) {
+	record ChargeRow(UUID id, String customer, Long amountKurus, String cardToken, ChargeStatus status) {
 
 		Charge charge() {
 			return new Charge(id, customer, amountKurus, status);
+		}
+
+		boolean isTombstone() {
+			return customer == null;
 		}
 
 		boolean sameRequestAs(ChargeRequest request) {

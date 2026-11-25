@@ -115,6 +115,35 @@ class ChargesTest {
 		assertThat(charge("booking-3-payment", 999, "tok_ok").getStatusCode().value()).isEqualTo(422);
 	}
 
+	@Test
+	void refundingByKeyRefundsACapturedCharge() {
+		charge("booking-4-payment", 1205000, "tok_ok");
+
+		assertThat(refundByKey("booking-4-payment")).containsEntry("status", "REFUNDED");
+	}
+
+	@Test
+	void aRefundThatArrivesFirstBlocksTheLateCharge() {
+		assertThat(refundByKey("booking-5-payment")).containsEntry("status", "CANCELLED");
+
+		assertThat(charge("booking-5-payment", 1205000, "tok_ok").getStatusCode().value()).isEqualTo(409);
+		assertThat(jdbc.sql("SELECT count(*) FROM charges WHERE status = 'CAPTURED'").query(Integer.class).single())
+				.isZero();
+	}
+
+	@Test
+	void refundingADeclinedChargeByKeyLeavesItDeclined() {
+		charge("booking-6-payment", 1205000, "tok_declined");
+
+		assertThat(refundByKey("booking-6-payment")).containsEntry("status", "DECLINED");
+	}
+
+	private Map<String, Object> refundByKey(String key) {
+		return http.post().uri("/charges/by-key/{key}/refund", key).retrieve()
+				.body(new ParameterizedTypeReference<>() {
+				});
+	}
+
 	private Map<String, Object> get(UUID id) {
 		return http.get().uri("/charges/" + id).retrieve().body(new ParameterizedTypeReference<>() {
 		});

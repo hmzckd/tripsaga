@@ -11,5 +11,5 @@ public interface FlightActivities {
 
 	void confirm(UUID holdId);
 
-	void cancel(UUID holdId);
+	void cancel(String holdIdempotencyKey);
 }
