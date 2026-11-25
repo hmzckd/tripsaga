@@ -113,6 +113,12 @@ class HoldsTest {
 		assertThat(seatsFree("TK2850")).isZero();
 	}
 
+	@Test
+	void faultInjectionIsOffByDefault() {
+		assertThat(http.get().uri("/admin/faults").retrieve().toBodilessEntity().getStatusCode().value())
+				.isEqualTo(404);
+	}
+
 	private ResponseEntity<Hold> hold(String flightId, String passenger) {
 		return http.post().uri("/holds")
 				.header("Idempotency-Key", UUID.randomUUID().toString())

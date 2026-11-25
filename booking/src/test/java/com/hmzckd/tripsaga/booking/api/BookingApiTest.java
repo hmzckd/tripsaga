@@ -25,6 +25,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.stubbing.Scenario;
 import com.hmzckd.tripsaga.booking.IntegrationTest;
 import com.hmzckd.tripsaga.booking.Participants;
 import com.hmzckd.tripsaga.booking.records.BookingRecords;
@@ -106,6 +107,31 @@ class BookingApiTest {
 		participants.hotel.verify(1, postRequestedFor(urlEqualTo("/holds")));
 		participants.flight.verify(postRequestedFor(urlEqualTo("/holds/" + SEAT + "/cancel")));
 		participants.payment.verify(0, postRequestedFor(urlMatching(".*")));
+	}
+
+	@Test
+	void aPaymentOutageIsRetriedWithTheSameIdempotencyKey() {
+		stub(participants.flight, "/holds", 201,
+				"{\"id\":\"" + SEAT + "\",\"flightId\":\"TK2412\",\"status\":\"HELD\",\"priceKurus\":245000}");
+		stub(participants.hotel, "/holds", 201, "{\"id\":\"" + ROOM
+				+ "\",\"hotelId\":\"AYT-LARA\",\"nights\":3,\"status\":\"HELD\",\"totalKurus\":960000}");
+		participants.payment.stubFor(post(urlEqualTo("/charges")).inScenario("outage")
+				.whenScenarioStateIs(Scenario.STARTED)
+				.willReturn(aResponse().withStatus(503))
+				.willSetStateTo("recovered"));
+		participants.payment.stubFor(post(urlEqualTo("/charges")).inScenario("outage")
+				.whenScenarioStateIs("recovered")
+				.willReturn(aResponse().withStatus(201).withHeader("Content-Type", "application/json")
+						.withBody("{\"id\":\"" + UUID.randomUUID() + "\",\"amountKurus\":1205000,\"status\":\"CAPTURED\"}")));
+		stub(participants.flight, "/holds/" + SEAT + "/confirm", 200, "{}");
+		stub(participants.hotel, "/holds/" + ROOM + "/confirm", 200, "{}");
+
+		String id = (String) book().getBody().get("id");
+
+		await().atMost(Duration.ofSeconds(10))
+				.until(() -> "CONFIRMED".equals(get(id).getBody().get("status")));
+		participants.payment.verify(2, postRequestedFor(urlEqualTo("/charges"))
+				.withHeader("Idempotency-Key", equalTo(id + "-payment")));
 	}
 
 	@Test

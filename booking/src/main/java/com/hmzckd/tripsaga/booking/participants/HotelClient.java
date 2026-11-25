@@ -21,7 +21,7 @@ class HotelClient implements HotelActivities {
 
 	@Override
 	public HotelHold hold(String idempotencyKey, String hotelId, String guest, int nights) {
-		return Http.rejectionsAreFinal(() -> http.post().uri("/holds")
+		return Http.call(() -> http.post().uri("/holds")
 				.header("Idempotency-Key", idempotencyKey)
 				.contentType(MediaType.APPLICATION_JSON)
 				.body(Map.of("hotelId", hotelId, "guest", guest, "nights", nights))
@@ -31,11 +31,11 @@ class HotelClient implements HotelActivities {
 
 	@Override
 	public void confirm(UUID holdId) {
-		Http.rejectionsAreFinal(() -> http.post().uri("/holds/{id}/confirm", holdId).retrieve().toBodilessEntity());
+		Http.call(() -> http.post().uri("/holds/{id}/confirm", holdId).retrieve().toBodilessEntity());
 	}
 
 	@Override
 	public void cancel(UUID holdId) {
-		Http.rejectionsAreFinal(() -> http.post().uri("/holds/{id}/cancel", holdId).retrieve().toBodilessEntity());
+		Http.call(() -> http.post().uri("/holds/{id}/cancel", holdId).retrieve().toBodilessEntity());
 	}
 }

@@ -29,3 +29,7 @@ Terms used in the code, tests and docs of TripSaga.
 | Pivot | The step after which the saga can no longer go back, here the payment capture. Steps before it are compensated on failure; steps after it are retried until they succeed. |
 | Business rejection | A participant's final "no" (no seat, no room, card declined). Retrying cannot change it, so the saga compensates at once. |
 | Compensating | The booking state while the compensations run, newest step first. |
+| Retry policy | How often and how fast Temporal repeats a failed activity: first wait, backoff factor, longest wait, maximum attempts. |
+| Non-retryable failure | A failure Temporal must not repeat. A participant's `4xx` answer becomes one. |
+| Needs attention | The end state of a booking whose compensation or confirm was rejected. A person has to look at it. |
+| Fault injection | Demo-only switches in the participant services (`/admin/faults`, enabled with `tripsaga.faults.enabled=true`) that slow down or fail writes. |

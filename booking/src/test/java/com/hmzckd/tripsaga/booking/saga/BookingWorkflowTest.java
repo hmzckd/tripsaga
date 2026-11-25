@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
@@ -62,7 +64,7 @@ class BookingWorkflowTest {
 
 		assertThat(state.status()).isEqualTo(BookingStatus.CONFIRMED);
 		assertThat(state.totalKurus()).isEqualTo(1205000);
-		assertThat(state.steps()).extracting(Step::outcome).containsExactly("HELD", "HELD", "CAPTURED", "CONFIRMED");
+		assertThat(state.steps()).extracting(Step::outcome).containsExactly("HELD", "HELD", "CAPTURED", "DONE", "DONE");
 
 		InOrder order = inOrder(flight, hotel, payment, records);
 		order.verify(flight).hold("b1-flight-hold", "TK2412", "Ayşe Yılmaz");
@@ -140,6 +142,71 @@ class BookingWorkflowTest {
 		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
 		assertThat(state.steps()).hasSize(1);
 		verify(hotel, never()).hold(anyString(), anyString(), anyString(), anyInt());
+		verify(flight, never()).cancel(SEAT);
+	}
+
+	@Test
+	void aShortOutageIsRetriedAndTheBookingStillSucceeds() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenThrow(new IllegalStateException("503 Service Unavailable"))
+				.thenThrow(new IllegalStateException("503 Service Unavailable"))
+				.thenReturn(new FlightHold(SEAT, "TK2412", "HELD", 245000));
+		when(hotel.hold(anyString(), anyString(), anyString(), anyInt()))
+				.thenReturn(new HotelHold(ROOM, "AYT-LARA", 3, "HELD", 960000));
+		when(payment.charge(anyString(), anyString(), anyLong(), anyString()))
+				.thenReturn(new Charge(UUID.randomUUID(), 1205000, "CAPTURED"));
+
+		BookingState state = book(new Booking("b6", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_ok"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CONFIRMED);
+		verify(flight, times(3)).hold("b6-flight-hold", "TK2412", "Ayşe Yılmaz");
+	}
+
+	@Test
+	void aLongOutageGivesUpAfterFourAttemptsAndCompensates() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenReturn(new FlightHold(SEAT, "TK2412", "HELD", 245000));
+		when(hotel.hold(anyString(), anyString(), anyString(), anyInt()))
+				.thenThrow(new IllegalStateException("503 Service Unavailable"));
+
+		BookingState state = book(new Booking("b7", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_ok"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		assertThat(state.failure()).isEqualTo("503 Service Unavailable");
+		verify(hotel, times(4)).hold("b7-hotel-hold", "AYT-LARA", "Ayşe Yılmaz", 3);
+		verify(flight).cancel(SEAT);
+	}
+
+	@Test
+	void aCompensationIsRetriedUntilItSucceeds() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenReturn(new FlightHold(SEAT, "TK2412", "HELD", 245000));
+		when(hotel.hold(anyString(), anyString(), anyString(), anyInt()))
+				.thenThrow(rejected("Hotel BJV-DOLU has no free rooms", 409));
+		IllegalStateException outage = new IllegalStateException("503 Service Unavailable");
+		doThrow(outage, outage, outage, outage, outage).doNothing().when(flight).cancel(SEAT);
+
+		BookingState state = book(new Booking("b8", "Ayşe Yılmaz", "TK2412", "BJV-DOLU", 3, "tok_ok"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		verify(flight, times(6)).cancel(SEAT);
+	}
+
+	@Test
+	void aRejectedConfirmAfterPaymentNeedsAttentionAndUndoesNothing() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenReturn(new FlightHold(SEAT, "TK2412", "HELD", 245000));
+		when(hotel.hold(anyString(), anyString(), anyString(), anyInt()))
+				.thenReturn(new HotelHold(ROOM, "AYT-LARA", 3, "HELD", 960000));
+		when(payment.charge(anyString(), anyString(), anyLong(), anyString()))
+				.thenReturn(new Charge(UUID.randomUUID(), 1205000, "CAPTURED"));
+		doThrow(rejected("Hold " + SEAT + " is CANCELLED and cannot be confirmed", 409)).when(flight).confirm(SEAT);
+
+		BookingState state = book(new Booking("b9", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_ok"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.NEEDS_ATTENTION);
+		verify(hotel).confirm(ROOM);
+		verify(hotel, never()).cancel(ROOM);
 		verify(flight, never()).cancel(SEAT);
 	}
 

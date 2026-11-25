@@ -8,13 +8,16 @@ import java.util.function.Supplier;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import io.temporal.failure.ApplicationFailure;
 
 final class Http {
 
 	static final String REJECTED = "ParticipantRejected";
+	static final String UNAVAILABLE = "ParticipantUnavailable";
 
 	static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(2);
 	static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
@@ -32,14 +35,20 @@ final class Http {
 		return builder.clone().baseUrl(baseUrl.toString()).requestFactory(requestFactory).build();
 	}
 
-	static <T> T rejectionsAreFinal(Supplier<T> call) {
+	static <T> T call(Supplier<T> call) {
 		try {
 			return call.get();
 		}
 		catch (HttpClientErrorException ex) {
-			ProblemDetail problem = ex.getResponseBodyAs(ProblemDetail.class);
-			String detail = problem != null && problem.getDetail() != null ? problem.getDetail() : ex.getMessage();
-			throw ApplicationFailure.newNonRetryableFailure(detail, REJECTED, ex.getStatusCode().value());
+			throw ApplicationFailure.newNonRetryableFailure(detail(ex), REJECTED, ex.getStatusCode().value());
 		}
+		catch (HttpServerErrorException ex) {
+			throw ApplicationFailure.newFailure(ex.getStatusCode().value() + " " + detail(ex), UNAVAILABLE);
+		}
+	}
+
+	private static String detail(RestClientResponseException ex) {
+		ProblemDetail problem = ex.getResponseBodyAs(ProblemDetail.class);
+		return problem != null && problem.getDetail() != null ? problem.getDetail() : ex.getStatusText();
 	}
 }

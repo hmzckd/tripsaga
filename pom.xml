@@ -16,6 +16,7 @@
 	<description>Travel booking across three services, kept consistent with an orchestrated saga on Temporal</description>
 
 	<modules>
+		<module>faults</module>
 		<module>booking</module>
 		<module>flight</module>
 		<module>hotel</module>
@@ -30,6 +31,11 @@
 
 	<dependencyManagement>
 		<dependencies>
+			<dependency>
+				<groupId>com.hmzckd.tripsaga</groupId>
+				<artifactId>faults</artifactId>
+				<version>${project.version}</version>
+			</dependency>
 			<dependency>
 				<groupId>io.temporal</groupId>
 				<artifactId>temporal-sdk</artifactId>

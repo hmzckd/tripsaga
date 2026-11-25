@@ -14,6 +14,7 @@ Work in progress.
 | `flight` | 8081 | Flight seats |
 | `hotel` | 8082 | Hotel rooms |
 | `payment` | 8083 | Payments and refunds |
+| `faults` | - | Demo-only fault injection library used by the three participants |
 
 ## Run locally
 
@@ -46,6 +47,14 @@ Work in progress.
 
    The booking answers `202 Accepted` at once; the saga runs in the background and the workflow `booking-<id>` shows
    every step in the Temporal UI.
+
+4. Try the failure paths. `XQ0000` has no seats, `BJV-DOLU` has no rooms and the card token `tok_declined` is always
+   declined. Start a participant with `--tripsaga.faults.enabled=true` to make it slow or failing on demand:
+
+   ```bash
+   ./mvnw -pl hotel spring-boot:run -Dspring-boot.run.arguments=--tripsaga.faults.enabled=true
+   curl -X PUT localhost:8082/admin/faults -H 'Content-Type: application/json' -d '{"delayMs":0,"failNext":2}'
+   ```
 
 ## Checks
 

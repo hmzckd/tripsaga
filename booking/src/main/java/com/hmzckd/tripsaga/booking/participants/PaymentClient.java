@@ -20,7 +20,7 @@ class PaymentClient implements PaymentActivities {
 
 	@Override
 	public Charge charge(String idempotencyKey, String customer, long amountKurus, String cardToken) {
-		return Http.rejectionsAreFinal(() -> http.post().uri("/charges")
+		return Http.call(() -> http.post().uri("/charges")
 				.header("Idempotency-Key", idempotencyKey)
 				.contentType(MediaType.APPLICATION_JSON)
 				.body(Map.of("customer", customer, "amountKurus", amountKurus, "cardToken", cardToken))

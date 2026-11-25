@@ -12,6 +12,10 @@
 
 	<dependencies>
 		<dependency>
+			<groupId>com.hmzckd.tripsaga</groupId>
+			<artifactId>faults</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
