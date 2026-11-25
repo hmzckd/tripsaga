@@ -15,6 +15,16 @@ Work in progress.
 | `hotel` | 8082 | Hotel rooms |
 | `payment` | 8083 | Payments and refunds |
 
+## Run locally
+
+```bash
+docker compose up -d
+./mvnw -pl flight spring-boot:run
+```
+
+PostgreSQL listens on port 5440 and holds one database and one user per service (`flight`, `hotel`, `payment`,
+`booking`), created by [`docker/postgres/init.sql`](docker/postgres/init.sql).
+
 ## Checks
 
 ```bash

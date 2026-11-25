@@ -11,3 +11,6 @@ Terms used in the code, tests and docs of TripSaga.
 | Orchestration | One component (the orchestrator) tells each participant what to do next and decides when to compensate. |
 | Choreography | No central component: each service reacts to the events of the others. Not used here. |
 | Orchestrator | The `booking` service's saga, written as a Temporal workflow. |
+| Hold | A temporary reservation: the seat or room is taken out of stock but not sold yet. A hold is later confirmed or cancelled. |
+| Confirm | Turn a hold into a final reservation. A confirmed hold can no longer be cancelled by the saga. |
+| Database per service | Each service has its own PostgreSQL database and user and cannot read the others. This is why a booking needs a saga instead of one transaction. |

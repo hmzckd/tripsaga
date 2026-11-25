@@ -1,6 +1,16 @@
 spring:
   application:
     name: flight
+  datasource:
+    url: jdbc:postgresql://localhost:5440/flight
+    username: flight
+    password: flight
+  mvc:
+    problemdetails:
+      enabled: true
+  threads:
+    virtual:
+      enabled: true
 
 server:
   port: 8081
