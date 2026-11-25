@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
@@ -19,6 +20,7 @@ import org.mockito.InOrder;
 
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
+import io.temporal.failure.ApplicationFailure;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
 
@@ -86,6 +88,63 @@ class BookingWorkflowTest {
 				.newWorkflowStub(BookingWorkflow.class, BookingWorkflow.workflowId("b2"));
 		assertThat(finished.state().status()).isEqualTo(BookingStatus.CONFIRMED);
 		verify(records).save(finished.state());
+	}
+
+	@Test
+	void aFullHotelCancelsTheSeatAndNeverCharges() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenReturn(new FlightHold(SEAT, "TK2412", "HELD", 245000));
+		when(hotel.hold(anyString(), anyString(), anyString(), anyInt()))
+				.thenThrow(rejected("Hotel BJV-DOLU has no free rooms", 409));
+
+		BookingState state = book(new Booking("b3", "Ayşe Yılmaz", "TK2412", "BJV-DOLU", 3, "tok_ok"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		assertThat(state.failure()).isEqualTo("Hotel BJV-DOLU has no free rooms");
+		assertThat(state.steps()).containsExactly(
+				new Step("hold seat on TK2412", "HELD"),
+				new Step("hold room at BJV-DOLU", "FAILED: Hotel BJV-DOLU has no free rooms"),
+				new Step("cancel seat on TK2412", "DONE"));
+		verify(flight).cancel(SEAT);
+		verify(payment, never()).charge(anyString(), anyString(), anyLong(), anyString());
+		verify(flight, never()).confirm(SEAT);
+		verify(records).save(state);
+	}
+
+	@Test
+	void aDeclinedCardCancelsTheRoomThenTheSeat() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenReturn(new FlightHold(SEAT, "TK2412", "HELD", 245000));
+		when(hotel.hold(anyString(), anyString(), anyString(), anyInt()))
+				.thenReturn(new HotelHold(ROOM, "AYT-LARA", 3, "HELD", 960000));
+		when(payment.charge(anyString(), anyString(), anyLong(), anyString()))
+				.thenThrow(rejected("The card was declined", 402));
+
+		BookingState state = book(new Booking("b4", "Ayşe Yılmaz", "TK2412", "AYT-LARA", 3, "tok_declined"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		InOrder undo = inOrder(hotel, flight);
+		undo.verify(hotel).cancel(ROOM);
+		undo.verify(flight).cancel(SEAT);
+		verify(flight, never()).confirm(SEAT);
+		verify(hotel, never()).confirm(ROOM);
+	}
+
+	@Test
+	void aSoldOutFlightHasNothingToUndo() {
+		when(flight.hold(anyString(), anyString(), anyString()))
+				.thenThrow(rejected("Flight XQ0000 has no free seats", 409));
+
+		BookingState state = book(new Booking("b5", "Ayşe Yılmaz", "XQ0000", "AYT-LARA", 3, "tok_ok"));
+
+		assertThat(state.status()).isEqualTo(BookingStatus.CANCELLED);
+		assertThat(state.steps()).hasSize(1);
+		verify(hotel, never()).hold(anyString(), anyString(), anyString(), anyInt());
+		verify(flight, never()).cancel(SEAT);
+	}
+
+	private static ApplicationFailure rejected(String message, int status) {
+		return ApplicationFailure.newNonRetryableFailure(message, "ParticipantRejected", status);
 	}
 
 	private BookingState book(Booking booking) {

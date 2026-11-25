@@ -23,10 +23,11 @@ public class BookingRecords implements RecordActivities {
 	@Override
 	public void save(BookingState state) {
 		jdbc.sql("""
-				INSERT INTO bookings (id, customer, flight_id, hotel_id, nights, status, total_kurus)
-				VALUES (:id, :customer, :flightId, :hotelId, :nights, :status, :totalKurus)
+				INSERT INTO bookings (id, customer, flight_id, hotel_id, nights, status, total_kurus, failure)
+				VALUES (:id, :customer, :flightId, :hotelId, :nights, :status, :totalKurus, :failure)
 				ON CONFLICT (id) DO UPDATE
-				SET status = EXCLUDED.status, total_kurus = EXCLUDED.total_kurus, updated_at = now()
+				SET status = EXCLUDED.status, total_kurus = EXCLUDED.total_kurus, failure = EXCLUDED.failure,
+				    updated_at = now()
 				""")
 				.param("id", UUID.fromString(state.id()))
 				.param("customer", state.customer())
@@ -35,6 +36,7 @@ public class BookingRecords implements RecordActivities {
 				.param("nights", state.nights())
 				.param("status", state.status().name())
 				.param("totalKurus", state.totalKurus())
+				.param("failure", state.failure())
 				.update();
 	}
 
@@ -44,7 +46,7 @@ public class BookingRecords implements RecordActivities {
 				.query((rs, row) -> new BookingState(rs.getString("id"), rs.getString("customer"),
 						rs.getString("flight_id"), rs.getString("hotel_id"), rs.getInt("nights"),
 						BookingStatus.valueOf(rs.getString("status")), rs.getObject("total_kurus", Long.class),
-						List.of()))
+						rs.getString("failure"), List.of()))
 				.optional();
 	}
 }

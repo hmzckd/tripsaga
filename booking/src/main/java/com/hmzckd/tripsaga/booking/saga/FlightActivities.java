@@ -10,4 +10,6 @@ public interface FlightActivities {
 	FlightHold hold(String idempotencyKey, String flightId, String passenger);
 
 	void confirm(UUID holdId);
+
+	void cancel(UUID holdId);
 }

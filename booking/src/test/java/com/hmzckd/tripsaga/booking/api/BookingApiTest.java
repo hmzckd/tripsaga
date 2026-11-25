@@ -90,6 +90,25 @@ class BookingApiTest {
 	}
 
 	@Test
+	void aRejectedRoomIsCompensatedByCancellingTheSeat() {
+		stub(participants.flight, "/holds", 201,
+				"{\"id\":\"" + SEAT + "\",\"flightId\":\"TK2412\",\"status\":\"HELD\",\"priceKurus\":245000}");
+		stub(participants.hotel, "/holds", 409, "{\"title\":\"Conflict\",\"status\":409,"
+				+ "\"detail\":\"Hotel BJV-DOLU has no free rooms\"}");
+		stub(participants.flight, "/holds/" + SEAT + "/cancel", 200, "{}");
+
+		String id = (String) book().getBody().get("id");
+
+		await().atMost(Duration.ofSeconds(10))
+				.until(() -> "CANCELLED".equals(get(id).getBody().get("status")));
+
+		assertThat(get(id).getBody()).containsEntry("failure", "Hotel BJV-DOLU has no free rooms");
+		participants.hotel.verify(1, postRequestedFor(urlEqualTo("/holds")));
+		participants.flight.verify(postRequestedFor(urlEqualTo("/holds/" + SEAT + "/cancel")));
+		participants.payment.verify(0, postRequestedFor(urlMatching(".*")));
+	}
+
+	@Test
 	void anInvalidRequestIsRejectedBeforeTheSagaStarts() {
 		ResponseEntity<String> response = http.post().uri("/api/bookings")
 				.contentType(MediaType.APPLICATION_JSON)

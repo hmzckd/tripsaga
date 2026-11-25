@@ -26,3 +26,6 @@ Terms used in the code, tests and docs of TripSaga.
 | Task queue | The named queue (`booking`) a worker polls for work. Starting a workflow puts work on it. |
 | Event history | Temporal's log of everything that happened in one workflow run. Replaying it rebuilds the workflow's state. |
 | Query | A read-only question to a running or finished workflow, answered from its state. `GET /api/bookings/{id}` uses it. |
+| Pivot | The step after which the saga can no longer go back, here the payment capture. Steps before it are compensated on failure; steps after it are retried until they succeed. |
+| Business rejection | A participant's final "no" (no seat, no room, card declined). Retrying cannot change it, so the saga compensates at once. |
+| Compensating | The booking state while the compensations run, newest step first. |

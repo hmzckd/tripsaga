@@ -21,16 +21,21 @@ class FlightClient implements FlightActivities {
 
 	@Override
 	public FlightHold hold(String idempotencyKey, String flightId, String passenger) {
-		return http.post().uri("/holds")
+		return Http.rejectionsAreFinal(() -> http.post().uri("/holds")
 				.header("Idempotency-Key", idempotencyKey)
 				.contentType(MediaType.APPLICATION_JSON)
 				.body(Map.of("flightId", flightId, "passenger", passenger))
 				.retrieve()
-				.body(FlightHold.class);
+				.body(FlightHold.class));
 	}
 
 	@Override
 	public void confirm(UUID holdId) {
-		http.post().uri("/holds/{id}/confirm", holdId).retrieve().toBodilessEntity();
+		Http.rejectionsAreFinal(() -> http.post().uri("/holds/{id}/confirm", holdId).retrieve().toBodilessEntity());
+	}
+
+	@Override
+	public void cancel(UUID holdId) {
+		Http.rejectionsAreFinal(() -> http.post().uri("/holds/{id}/cancel", holdId).retrieve().toBodilessEntity());
 	}
 }

@@ -48,7 +48,7 @@ class BookingController {
 		WorkflowClient.start(saga::book, booking);
 
 		BookingState started = new BookingState(booking.id(), booking.customer(), booking.flightId(),
-				booking.hotelId(), booking.nights(), BookingStatus.STARTED, null, List.of());
+				booking.hotelId(), booking.nights(), BookingStatus.STARTED, null, null, List.of());
 		return ResponseEntity.accepted().location(URI.create("/api/bookings/" + booking.id())).body(started);
 	}
 
